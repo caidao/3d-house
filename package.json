@@ -1,1 +1,19 @@
-{"name":"prism-house","private":true,"type":"module","scripts":{"test":"node test-scene.js","start":"python3 -m http.server 4173 --directory dist"}}
+{
+  "name": "prism-house",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test-scene.js && node test-rendering.js",
+    "start": "python3 -m http.server 4173 --directory dist",
+    "build": "node scripts/build-renderer.mjs"
+  },
+  "dependencies": {
+    "onnxruntime-web": "1.27.0",
+    "three": "0.180.0",
+    "three-gpu-pathtracer": "0.0.24",
+    "three-mesh-bvh": "0.9.15"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

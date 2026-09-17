@@ -25,7 +25,7 @@ for(const flight of stairs){
   assert(flight.run/flight.count>=.23,'Stair treads must have physical depth');
   assert(flight.width>=.9,'Stairs must have usable width');
 }
-assert(lights.length>=10&&lights.every(l=>l.isPointLight),'Interior and garden lights must illuminate actual surfaces');
+assert(lights.length>=10&&lights.every(l=>l.isPointLight||l.isRectAreaLight),'Interior and garden lights must illuminate actual surfaces');
 assert.equal(glass.length,Object.keys(palette).length);assert(warm.emissiveIntensity>0);
 // Verify the complete local module graph, including postprocessing and HDR loader dependencies.
 const seen=new Set();

@@ -17,3 +17,5 @@ Vegetation GLTF geometry, texture maps and alpha masks are stored locally under 
 
 Current visible 4K photographic panorama: https://polyhaven.com/a/green_point_park (Greg Zaal, CC0).
 Garden hedges reuse the photographed leaf and alpha atlas from island_tree_02, arranged as instanced leaf clusters.
+
+Asphalt: https://polyhaven.com/a/aerial_asphalt_01 (CC0), local colour/normal/roughness maps.
