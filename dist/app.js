@@ -13,6 +13,7 @@ const dialog=document.querySelector('#original-dialog');
 for(const id of ['original-top','original-card'])document.getElementById(id).onclick=()=>dialog.showModal();
 document.querySelector('#close-dialog').onclick=()=>dialog.close();
 dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close();});
+for(const button of document.querySelectorAll('[data-photo]'))button.onclick=()=>{dialog.querySelector('img').src='./assets/'+button.dataset.photo;document.querySelectorAll('[data-photo]').forEach(b=>b.setAttribute('aria-pressed',b===button));};
 
 try {
   const renderer=new THREE.WebGLRenderer({antialias:true});
@@ -24,7 +25,7 @@ try {
   let missingAsset=false;
   manager.onError=()=>{missingAsset=true;};
   const loader=new THREE.TextureLoader(manager),textures={};
-  for(const name of ['stone','wood','grass','paving']){
+  for(const name of ['wood','grass','paving']){
     textures[name]={};
     for(const [suffix,key] of [['color','map'],['normal','normalMap'],['rough','roughnessMap']]){
       const tex=loader.load(`./assets/materials/${name}-${suffix}.jpg`);tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.anisotropy=renderer.capabilities.getMaxAnisotropy();if(key==='map')tex.colorSpace=THREE.SRGBColorSpace;textures[name][key]=tex;
@@ -50,6 +51,7 @@ try {
   }
   const modelLoader=new GLTFLoader(manager);
   function addScannedPlanting(name,placements){
+    if(!placements.length)return;
     modelLoader.load(`./assets/models/${name}/model.gltf`,asset=>{
       const root=asset.scene;root.updateMatrixWorld(true);
       const bounds=new THREE.Box3().setFromObject(root),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());
@@ -87,7 +89,7 @@ try {
   const composer=new EffectComposer(renderer,target);composer.addPass(new RenderPass(scene,camera));
   const ao=new SSAOPass(scene,camera,1,1,16);ao.kernelRadius=.55;ao.minDistance=.001;ao.maxDistance=.09;composer.addPass(ao);composer.addPass(new OutputPass());
   let transition=null,activeView='overall',mobile=innerWidth<=760;
-  const views={overall:{pos:[10,23,34],target:[0,5.8,0]},front:{pos:[0,12,43],target:[0,5,-1]},aerial:{pos:[18,43,26],target:[0,1,0]},courtyard:{pos:[2.2,2.4,11.5],target:[-1.5,3.2,-2]},living:{pos:[-7.7,1.85,7.4],target:[-8.4,1.5,4.5]}};
+  const views={overall:{pos:[22,26,46],target:[1,7,5]},front:{pos:[1,20,49],target:[1,7,3]},aerial:{pos:[18,49,35],target:[1,2,5]},courtyard:{pos:[2.2,2.4,11.5],target:[-1.5,3.2,-2]},living:{pos:[-8.5,1.8,15],target:[-8.5,1.5,11.5]}};
   function setView(view,animate=true){
     activeView=view;const target=new THREE.Vector3(...views[view].target),pos=new THREE.Vector3(...views[view].pos);
     if(mobile&&!['courtyard','living'].includes(view))pos.sub(target).multiplyScalar(1.2).add(target);

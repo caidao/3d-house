@@ -1,266 +1,217 @@
 import * as THREE from './vendor/three.module.js';
 
-// All dimensions are in metres. The model depicts rooms, floors and circulation,
-// while retaining the child's coloured glazing and asymmetric roof silhouettes.
-export function buildWorld(textures = {}) {
-  const world=new THREE.Group();world.name='residence';
-  const architecture=new THREE.Group();architecture.name='architecture';world.add(architecture);
-  const materials={};
-  function mat(name,color,extra={}){return materials[name]=new THREE.MeshStandardMaterial({color,roughness:.7,...extra,...textures[name]});}
-  const stone=mat('stone','#b9b6aa'),plaster=mat('plaster','#a29172'),wood=mat('wood','#d8b28a');
-  const paving=mat('paving','#e1dbcf',{roughness:.87}),grass=mat('grass','#697b45');
-  const frame=mat('frame','#282e2a',{metalness:.7,roughness:.3}),bronze=mat('bronze','#dbad2e',{metalness:.5,roughness:.24});
-  const roof=mat('roof','#26383f',{metalness:.5,roughness:.24}),fabric=mat('fabric','#e2d7bd');
-  const warm=mat('warm','#ffe2aa',{emissive:'#ffd18c',emissiveIntensity:.7});
-  const glass=['#edbc21','#e23657','#39b771','#59a7c6','#ad5fac','#eb8733'].map(color=>new THREE.MeshPhysicalMaterial({color,roughness:.11,metalness:0,transparent:true,opacity:.78,transmission:0,thickness:.12,ior:1.48,side:THREE.DoubleSide,depthWrite:false,clearcoat:1,envMapIntensity:1.5}));
-  const clear=new THREE.MeshPhysicalMaterial({color:'#e0edf0',metalness:0,roughness:.025,transparent:true,opacity:.12,transmission:0,thickness:.04,ior:1.5,side:THREE.DoubleSide,depthWrite:false,clearcoat:1,envMapIntensity:1.1});
-  const water=new THREE.MeshPhysicalMaterial({color:'#378f9c',metalness:.45,roughness:.12,clearcoat:1});
-  const lights=[],stairs=[];
-  const edgeColors=glass.map((m,i)=>mat('edge'+i,m.color,{metalness:.45,roughness:.24}));
-  function mesh(g,m,x=0,y=0,z=0,parent=world){const o=new THREE.Mesh(g,m);o.position.set(x,y,z);o.castShadow=!m.transparent;o.receiveShadow=true;parent.add(o);return o;}
-  function box(w,h,d,x,y,z,m=stone,parent=world){
-    const g=new THREE.BoxGeometry(w,h,d);
-    if(m.map){const p=g.attributes.position,n=g.attributes.normal,uv=g.attributes.uv;for(let i=0;i<p.count;i++){const nx=Math.abs(n.getX(i)),ny=Math.abs(n.getY(i));uv.setXY(i,(nx>.5?p.getZ(i)+z:p.getX(i)+x)/2,(ny>.5?p.getZ(i)+z:p.getY(i)+y)/2);}}
-    return mesh(g,m,x,y,z,parent);
-  }
-  function beam(a,b,m=frame,r=.045,parent=world){const p=new THREE.Vector3(...a),q=new THREE.Vector3(...b),v=q.clone().sub(p);const o=mesh(new THREE.CylinderGeometry(r,r,v.length(),8),m,...p.add(q).multiplyScalar(.5).toArray(),parent);o.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),v.normalize());return o;}
-  function triangle(a,b,c,color,parent=architecture){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute([...a,...b,...c],3));g.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,1,0,.5,1],2));g.computeVertexNormals();mesh(g,glass[color%6],0,0,0,parent);for(const [p,q] of [[a,b],[b,c],[c,a]])beam(p,q,edgeColors[color%6],.07,parent);for(const p of [a,b,c])mesh(new THREE.SphereGeometry(.095,8,6),bronze,...p,parent);}
-  function pyramid(x,y,z,w,h,d,color,parent=architecture){const p=[[x-w/2,y,z-d/2],[x+w/2,y,z-d/2],[x+w/2,y,z+d/2],[x-w/2,y,z+d/2]];for(let i=0;i<4;i++)triangle(p[i],p[(i+1)%4],[x,y+h,z],color+i,parent);}
-  function rail(a,b,y,parent=architecture){
-    const length=Math.hypot(b[0]-a[0],b[1]-a[1]),count=Math.ceil(length/1.2);
-    beam([a[0],y+1.03,a[1]],[b[0],y+1.03,b[1]],frame,.035,parent);
-    for(let i=0;i<=count;i++){const t=i/count;beam([a[0]+(b[0]-a[0])*t,y,a[1]+(b[1]-a[1])*t],[a[0]+(b[0]-a[0])*t,y+1.03,a[1]+(b[1]-a[1])*t],frame,.026,parent);}
-    const panel=box(length,.89,.035,(a[0]+b[0])/2,y+.5,(a[1]+b[1])/2,clear,parent);panel.rotation.y=-Math.atan2(b[1]-a[1],b[0]-a[0]);
-  }
-  function stair(x,z,width,rise,run,count,parent=architecture,colorful=false){
-    const group=new THREE.Group();group.name='continuous-stair';parent.add(group);stairs.push({rise,run,count,width});
-    for(let i=0;i<count;i++){const y=(i+1)*rise/count;if(colorful){box(width,.14,run/count+.02,x,y-.07,z-i*run/count,glass[i%6],group);box(width,rise/count,.045,x,y-rise/count/2,z-i*run/count+run/count/2,glass[i%6],group);}else{box(width,y,run/count+.02,x,y/2,z-i*run/count,stone,group);box(width,.035,run/count,x,y+.02,z-i*run/count,paving,group);}}
-    if(colorful)for(const side of [-1,1])beam([x+side*width*.43,.13,z],[x+side*width*.43,rise-.14,z-run+run/count],frame,.12,group);
-    for(const s of [-1,1]){beam([x+s*width/2,rise/count+1.03,z+.1],[x+s*width/2,rise+1.03,z-run+run/count],bronze,.04,group);for(let i=0;i<count;i+=3)beam([x+s*width/2,(i+1)*rise/count,z-i*run/count],[x+s*width/2,(i+1)*rise/count+1.03,z-i*run/count],bronze,.025,group);}
-    return group;
-  }
-  function lounge(x,y,z,parent=architecture){
-    box(2,.35,.9,x,y+.35,z,wood,parent);box(1.9,.18,.82,x,y+.6,z,fabric,parent);box(2,.65,.18,x,y+.72,z-.4,fabric,parent);
-    for(const s of [-1,1])box(.18,.5,.88,x+s*.95,y+.56,z,fabric,parent);
-    box(1.2,.09,.7,x,y+.43,z+1.1,wood,parent);for(const s of [-1,1])box(.055,.4,.5,x+s*.45,y+.2,z+1.1,frame,parent);
-    mesh(new THREE.CylinderGeometry(.13,.1,.26,12),plaster,x+.3,y+.6,z+1.1,parent);
-  }
-  function roomBuilding(x,z,w,d,floors,parent=architecture){
-    const group=new THREE.Group();group.position.set(x,.22,z);group.name='habitable-building';parent.add(group);
-    function floor(y,thickness,material,opening){
-      if(!opening){box(w+.28,thickness,d+.3,0,y,0,material,group);return;}
-      const core=d<5?2.2:1.3;
-      box(w-core,thickness,d+.3,core/2,y,0,material,group);
-      box(core+.28,thickness,.55,-w/2+core/2,y,d/2-.13,material,group);
-      box(core+.28,thickness,.4,-w/2+core/2,y,-d/2,material,group);
+// Exterior geometry is expressed in magnetic-square modules; U is one uniform enlargement.
+// Reference: docs/exterior-reference.md and the four original construction photographs.
+export function buildWorld(textures={}) {
+  const U=2.4,world=new THREE.Group(),architecture=new THREE.Group();
+  world.name='magnetic-estate';architecture.name='architecture';world.add(architecture);
+  const materials={},lights=[],stairs=[],parts={},roads=[],roadMarks=[];
+  function mat(name,color,options={}){return materials[name]=new THREE.MeshStandardMaterial({color,roughness:.6,...options,...textures[name]});}
+  const palette={red:'#e51836',magenta:'#ea149f',orange:'#f38413',yellow:'#f3d51b',lime:'#91db22',green:'#0bc575',cyan:'#29bedc',blue:'#196389',purple:'#8933be',smoke:'#424c4b',clear:'#d5ece9',silver:'#c3d1d0'};
+  const keys=Object.keys(palette);
+  const glass=keys.map(k=>new THREE.MeshPhysicalMaterial({name:k,color:palette[k],roughness:k==='silver'?.08:.055,metalness:k==='silver'?.72:.06,transparent:true,opacity:k==='clear'?.14:k==='silver'?.58:.48,side:THREE.DoubleSide,depthWrite:false,clearcoat:1,envMapIntensity:1.3}));
+  const glazing=Object.fromEntries(keys.map((k,i)=>[k,glass[i]]));
+  const rims=Object.fromEntries(keys.map(k=>[k,mat('rim-'+k,k==='clear'?'#abbebc':palette[k],{metalness:.28,roughness:.21})]));
+  const charcoal=mat('charcoal','#252b2b',{metalness:.4,roughness:.35}),asphalt=mat('asphalt','#1c2326',{roughness:.92});
+  const white=mat('white','#eef4ed'),yellow=rims.yellow,red=rims.red,wood=mat('wood','#cdae8a'),fabric=mat('fabric','#efe1c5');
+  const paving=mat('paving','#d0cec2'),grass=mat('grass','#a0ac77'),warm=mat('warm','#ffdfa1',{emissive:'#ffc976',emissiveIntensity:1.4});
+  function group(name,x=0,y=0,z=0,parent=architecture){const g=new THREE.Group();g.name=name;g.position.set(x,y,z);parent.add(g);parts[name]=g;return g;}
+  function mesh(g,m,x=0,y=0,z=0,parent=architecture){const o=new THREE.Mesh(g,m);o.position.set(x,y,z);o.castShadow=!m.transparent;o.receiveShadow=true;parent.add(o);return o;}
+  function box(w,h,d,x,y,z,m=charcoal,parent=architecture){const g=new THREE.BoxGeometry(w,h,d);if(m.map){const p=g.attributes.position,n=g.attributes.normal,uv=g.attributes.uv;for(let i=0;i<p.count;i++)uv.setXY(i,(Math.abs(n.getX(i))>.5?p.getZ(i)+z:p.getX(i)+x)/2,(Math.abs(n.getY(i))>.5?p.getZ(i)+z:p.getY(i)+y)/2);}return mesh(g,m,x,y,z,parent);}
+  function beam(a,b,m=charcoal,r=.065,parent=architecture){const p=new THREE.Vector3(...a),q=new THREE.Vector3(...b),v=q.clone().sub(p);const o=mesh(new THREE.CylinderGeometry(r,r,v.length(),8),m,...p.add(q).multiplyScalar(.5).toArray(),parent);o.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),v.normalize());return o;}
+  function surface(vertices,m,parent=architecture){const g=new THREE.BufferGeometry(),p=[];for(let i=1;i<vertices.length-1;i++)p.push(...vertices[0],...vertices[i],...vertices[i+1]);g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(p.flatMap((_,i)=>i%3===0?[p[i]/U,p[i+1]/U]:[]),2));g.computeVertexNormals();return mesh(g,m,0,0,0,parent);}
+  function panel(vertices,color,parent=architecture,faceted=false){
+    const mid=new THREE.Vector3();vertices.forEach(v=>mid.add(new THREE.Vector3(...v)));mid.divideScalar(vertices.length);
+    if(faceted){const n=new THREE.Vector3(...vertices[1]).sub(new THREE.Vector3(...vertices[0])).cross(new THREE.Vector3(...vertices[2]).sub(new THREE.Vector3(...vertices[0]))).normalize();const peak=mid.clone().addScaledVector(n,.22*U).toArray();for(let i=0;i<vertices.length;i++)surface([vertices[i],vertices[(i+1)%vertices.length],peak],glazing[color],parent);}
+    else surface(vertices,glazing[color],parent);
+    for(let i=0;i<vertices.length;i++){
+      const a=vertices[i],b=vertices[(i+1)%vertices.length];beam(a,b,rims[color],.075,parent);
+      for(const t of [.26,.74]){const p=new THREE.Vector3(...a).lerp(new THREE.Vector3(...b),t),q=new THREE.Vector3(...a).lerp(new THREE.Vector3(...b),t+.075);beam(p.toArray(),q.toArray(),charcoal,.087,parent);}
+      mesh(new THREE.SphereGeometry(.087,8,6),rims[color],...a,parent);
     }
-    for(let f=0;f<=floors;f++)floor(f*3,.28,stone,f>0&&f<floors);
-    for(let f=0;f<floors;f++){
-      const base=f*3;
-      floor(base+.17,.045,wood,f>0);
-      box(w,.5,.23,0,base+.42,-d/2,stone,group);box(w,2.1,.04,0,base+1.72,-d/2,clear,group);for(let i=0;i<4;i++)box(.07,2.7,.1,-w/2+i*w/3,base+1.5,-d/2,frame,group);
-      box(.24,.55,d*.62,-w/2,base+.45,-d*.19,stone,group);
-      for(const s of [-1,1]){
-        box(.28,2.75,.28,s*w/2,base+1.5,d/2,frame,group);
-        box(.08,2.65,d-.3,s*w/2,base+1.5,0,clear,group);
-        box(.3,2.75,.28,s*w/2,base+1.5,-d/2,frame,group);
+  }
+  function triangle(a,b,c,color,parent=architecture){panel([a,b,c],color,parent);}
+  function pyramid(x,y,z,w,h,d,colors,parent=architecture){const v=[[x-w/2,y,z-d/2],[x+w/2,y,z-d/2],[x+w/2,y,z+d/2],[x-w/2,y,z+d/2]];for(let i=0;i<4;i++)triangle(v[i],v[(i+1)%4],[x,y+h,z],colors[i%colors.length],parent);}
+  function square(x,y,z,size,color,parent=architecture,side=0,faceted=false){const g=new THREE.Group();g.position.set(x,y,z);g.rotation.y=side;parent.add(g);panel([[-size/2,-size/2,0],[size/2,-size/2,0],[size/2,size/2,0],[-size/2,size/2,0]],color,g,faceted);return g;}
+  function arrow(x,y,z,rotation=0,color=white,parent=world,size=1){const g=new THREE.Group();g.position.set(x,y,z);g.rotation.y=rotation;parent.add(g);box(.09*size,.014,.8*size,0,0,.14*size,color,g);surface([[.28*size,.01,-.12*size],[0,.01,-.53*size],[-.28*size,.01,-.12*size]],color,g);}
+  function roadTile(w,d,x,y,z,parent=architecture,greenArrow=false){const g=new THREE.Group();g.position.set(x,y,z);parent.add(g);box(w,.11,d,0,0,0,asphalt,g);for(const s of [-1,1])box(.055,.012,d-.13,s*(w/2-.13),.065,0,white,g);for(let k=0;k<4;k++)box(.055,.013,d*.1,0,.067,-d*.36+k*d*.24,white,g);if(greenArrow)arrow(w*.23,.075,0,0,rims.green,g,.85);return g;}
+  function interiorStair(x,y,z,rise,run,parent){const count=Math.ceil(rise/.18),width=.95;stairs.push({rise,run,count,width,kind:'interior'});const g=group('internal-flight-'+stairs.length,x,y,z,parent);for(let i=0;i<count;i++)box(width,(i+1)*rise/count,run/count,0,(i+1)*rise/count/2,-i*run/count,wood,g);for(const s of [-1,1])beam([s*.5,1,0],[s*.5,rise+1,-run+run/count],charcoal,.027,g);}
+  function furnish(x,y,z,parent){
+    box(1.8,.4,.78,x,y+.28,z,wood,parent);box(1.7,.18,.7,x,y+.57,z,fabric,parent);box(1.8,.6,.15,x,y+.7,z-.34,fabric,parent);
+    for(const s of [-1,1])box(.13,.42,.76,x+s*.84,y+.51,z,fabric,parent);
+    box(.95,.07,.55,x,y+.45,z+1,wood,parent);for(const s of [-1,1])box(.045,.42,.4,x+s*.37,y+.21,z+1,charcoal,parent);
+  }
+  function shell(name,x,z,cols,depth,rows,frontColors,sideColors){
+    const g=group(name,x,.16,z),w=cols*U,d=depth*U;g.userData.role='tile-building';
+    for(let f=0;f<=rows;f++)box(w,.14,d,0,f*U,0,charcoal,g);
+    for(let f=0;f<rows;f++){
+      box(w-.18,.055,d-.18,0,f*U+.1,0,wood,g);
+      for(let c=0;c<cols;c++){
+        const color=frontColors[f][c];square((c-(cols-1)/2)*U,(f+.5)*U,d/2,U,color,g,0,color==='silver');
+        const back=frontColors[f][cols-1-c];square((c-(cols-1)/2)*U,(f+.5)*U,-d/2,U,back,g,Math.PI,back==='silver');
       }
-      const bays=Math.ceil(w/1.45);
-      for(let i=0;i<bays;i++){
-        const xx=-w/2+(i+.5)*w/bays;
-        box(w/bays-.07,2.62,.035,xx,base+1.52,d/2,clear,group);
-        box(.065,2.75,.12,xx-w/bays/2,base+1.5,d/2,frame,group);
-        box(w/bays-.07,.42,.05,xx,base+2.63,d/2+.06,glass[(f+i)%6],group);if(i%2===0){box(.14,2.75,.14,xx-w/bays/2,base+1.5,d/2+.06,edgeColors[(f+i)%6],group);}
-      }
-      box(w,.1,.12,0,base+2.83,d/2,frame,group);
-      box(w*.2,2.3,.12,w*.25,base+1.35,-d*.28,wood,group);
-      lounge(-w*.2,base+.17,d*.03,group);
-      mesh(new THREE.CylinderGeometry(.55,.55,.08,24),wood,w*.28,base+.91,d*.18,group);beam([w*.28,base+.18,d*.18],[w*.28,base+.87,d*.18],frame,.06,group);for(const side of [-1,1]){box(.5,.09,.48,w*.28+side*.74,base+.65,d*.18,fabric,group);box(.08,.6,.48,w*.28+side*.95,base+.83,d*.18,wood,group);}
-      box(w*.32,.42,1.8,w*.28,base+.4,-d*.26,fabric,group);
-      box(w-.5,.035,.055,0,base+2.82,d/2-.3,warm,group);
-      const light=new THREE.PointLight('#ffc77b',55,8,2);light.position.set(0,base+2.6,0);group.add(light);lights.push(light);
-      // A compact internal flight joins consecutive floor levels.
-      if(f<floors-1){
-        if(d>=5){
-          const flight=stair(-w/2+.65,d/2-.6,1,3,d-1,18,group);flight.position.y=base+.15;
-        }else{
-          const first=stair(-w/2+.6,d/2-.65,.9,1.5,d-1.1,9,group);first.position.y=base+.15;
-          const second=stair(0,0,.9,1.5,d-1.1,9,group);second.position.set(-w/2+1.6,base+1.65,-d/2+.45);second.rotation.y=Math.PI;
-          box(2,.15,.55,-w/2+1.1,base+1.65,-d/2+.25,stone,group);
-        }
-      }
+      for(let j=0;j<depth;j++)for(const side of [-1,1]){const color=sideColors[f][j];square(side*w/2,(f+.5)*U,(j-(depth-1)/2)*U,U,color,g,side*Math.PI/2,color==='silver');}
+      furnish(-w*.18,f*U+.12,0,g);box(w-.35,.025,.035,0,(f+1)*U-.16,d/2-.25,warm,g);
+      const l=new THREE.PointLight('#ffd29a',35,7,2);l.position.set(0,(f+1)*U-.35,0);g.add(l);lights.push(l);
+      if(f<rows-1&&depth>=2)interiorStair(-w/2+.65,f*U+.13,d/2-.65,U,d-1.3,g);
     }
-    return group;
+    return g;
   }
-  // Continuous terrain and a walled garden replace the tabletop plinth.
-  const ground=box(280,.4,280,0,-.4,0,grass);ground.name='terrain';
-  box(34,.18,27,0,-.1,-1,paving);
-  for(let i=0;i<18;i++)for(let j=0;j<13;j++){box(1.84,.025,1.84,-16+i*1.87,.008,-13+j*1.87,paving);}
-  const asphalt=mat('asphalt','#4d5553');box(90,.05,7,0,-.1,18.5,asphalt);
-  for(let i=-12;i<=12;i++)box(1.5,.01,.1,i*3,.0,18.5,plaster);
-  box(90,.12,1.4,0,-.04,14.45,stone);box(90,.12,1.4,0,-.04,22.5,stone);
-  for(const s of [-1,1]){box(.5,1.4,27,s*17,.6,-1,stone);box(.68,.16,27,s*17,1.35,-1,plaster);}
-  box(34,1.4,.5,0,.6,-14.5,stone);
-  for(const s of [-1,1]){if(s<0){box(13.4,1.25,.48,-10.3,.53,12.5,stone);box(13.6,.15,.65,-10.3,1.2,12.5,plaster);}else{box(7.1,1.25,.48,7.15,.53,12.5,stone);box(7.25,.15,.65,7.15,1.2,12.5,plaster);}box(.8,2,.8,s*3.4,1,12.5,stone);}
-  // An open entrance gate preserves vehicle and pedestrian access.
-  for(const s of [-1,1]){for(let i=0;i<15;i++)box(.045,1.5,.055,s*3.5,1,11.9-i*.2,frame);box(.08,.06,3,s*3.5,1.75,10.5,bronze);}
-  const main=roomBuilding(-1.5,-4,8.4,6.6,3);
-  for(const s of [-1,1]){
-    const slope=box(9.2,.18,4.35,0,10.35,s*1.76,roof,main);slope.rotation.x=s*.56;
-    for(let i=0;i<11;i++)box(.03,.07,4.25,-4.4+i*.88,.13,0,bronze,slope);
-    for(let i=0;i<5;i++)box(9,.025,.035,0,.13,-2+i,frame,slope);
-    triangle([s*4.21,9,-3.3],[s*4.21,9,3.3],[s*4.21,11.55,0],0,main);
-    box(9.1,.12,.14,0,9.12,s*3.56,frame,main);
-  }
-  for(let i=0;i<4;i++)pyramid(-3.2+i*2.1,11.6,0,2,1.7,2,i,main);
-  pyramid(0,12.95,0,1.65,2.2,1.65,2,main);
-  for(let level=0;level<3;level++){
-    const y=6.4+level*2.3,x=2.15,z=-.48;
-    box(1.7,.13,1.4,x,y,z,bronze,architecture);
-    triangle([x-.85,y,z+.72],[x+.85,y,z+.72],[x,y+2.25,z+.72],level+1);
-    triangle([x+.85,y,z-.7],[x+.85,y,z+.7],[x+1.8,y+1.1,z],level+2);
-    for(const s of [-1,1])beam([x+s*.85,y,z+.72],[x+s*.85,y+2.3,z+.72],edgeColors[1],.065);
-  }
-  pyramid(2.15,13.3,-.48,1.85,1.75,1.65,0);
-  // Full-width front balconies and load-bearing pillars.
-  for(const y of [3.22,6.22]){
-    box(9.3,.25,2.05,-1.5,y,.13,stone,architecture);box(9,.04,1.85,-1.5,y+.15,.13,wood,architecture);
-    rail([-6.15,1.16],[3.15,1.16],y+.15);rail([-6.15,-.85],[-6.15,1.16],y+.15);rail([3.15,-.85],[3.15,1.16],y+.15);
-  }
-  for(const x of [-5.85,2.85])box(.24,6.3,.24,x,3.15,.65,frame,architecture);
-  box(3.2,.22,2.1,-1.5,2.9,.3,stone,architecture);stair(-1.5,2.2,3,.22,1.4,2);
-  for(const s of [-1,1]){box(1.16,2.55,.06,-1.5+s*.62,1.5,-.64,clear,architecture);box(.04,2.55,.1,-1.5+s*1.22,1.5,-.59,frame,architecture);box(.04,.45,.06,-1.5+s*.12,1.48,-.52,bronze,architecture);}
-  // Left tower: real stone base and rooms beneath a coloured crystal crown.
-  roomBuilding(-10,-3.5,3.2,3.8,3);pyramid(-10,9.3,-3.5,3.6,3.4,4.2,1);pyramid(-10,12.6,-3.5,2.2,1.8,2.2,0);
-  const tower=new THREE.Group();tower.name='star-living-tower';tower.position.set(-8.4,.22,4.7);architecture.add(tower);
-  for(let f=0;f<3;f++){
-    mesh(new THREE.CylinderGeometry(2.45,2.45,.28,32),stone,0,f*2.8,0,tower);
-    if(f===0)mesh(new THREE.CylinderGeometry(2.4,2.4,.72,32),stone,0,.4,0,tower);
-    for(let i=0;i<12;i++){
-      const a=i*Math.PI/6,m=a+Math.PI/12;
-      const panel=box(1.23,2.5,.045,2.36*Math.cos(m),f*2.8+1.5,2.36*Math.sin(m),clear,tower);panel.rotation.y=-m+Math.PI/2;
-      beam([2.44*Math.cos(a),f*2.8,2.44*Math.sin(a)],[2.44*Math.cos(a),(f+1)*2.8,2.44*Math.sin(a)],frame,.05,tower);
+  // Roads are distinct original features, not landscaping substitutes.
+  const terrain=box(230,.3,230,0,-.34,0,grass,world);terrain.name='terrain';
+  box(46,.14,46,0,-.12,7,paving,world);
+  function road(points,width,name,closed=false){
+    const pts=points.map(p=>new THREE.Vector3(p[0],.03,p[1]));
+    const curve=new THREE.CatmullRomCurve3(pts,closed,'centripetal'),count=Math.max(60,Math.ceil(curve.getLength()*5));
+    const vertices=[],edgeL=[],edgeR=[],samples=[];
+    for(let i=0;i<=count;i++){
+      const t=i/count,p=curve.getPoint(t),dir=curve.getTangent(t).normalize(),n=new THREE.Vector3(-dir.z,0,dir.x),l=p.clone().addScaledVector(n,width/2),r=p.clone().addScaledVector(n,-width/2);
+      edgeL.push(l);edgeR.push(r);samples.push([p.x,p.z]);
+      if(i){vertices.push(...edgeL[i-1].toArray(),...edgeR[i-1].toArray(),...r.toArray(),...edgeL[i-1].toArray(),...r.toArray(),...l.toArray());}
+      if(i%6===0){const dash=box(.065,.015,.45,p.x,.055,p.z,white,world);dash.rotation.y=Math.atan2(dir.x,dir.z);roadMarks.push({object:dash,name,x:p.x,z:p.z});}
     }
-    lounge(-.4,f*2.8+.2,-.2,tower);
-    const l=new THREE.PointLight('#ffc77b',45,8,2);l.position.set(0,f*2.8+2.5,0);tower.add(l);lights.push(l);
+    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(vertices.flatMap((_,i)=>i%3===0?[vertices[i],vertices[i+2]]:[]),2));geometry.computeVertexNormals();const roadMesh=mesh(geometry,asphalt,0,0,0,world);roadMesh.material.side=THREE.DoubleSide;roadMesh.name=name;
+    for(let i=1;i<=count;i++)for(const edge of [edgeL,edgeR]){const line=beam([edge[i-1].x,.055,edge[i-1].z],[edge[i].x,.055,edge[i].z],white,.027,world);roadMarks.push({object:line,name,x:(edge[i-1].x+edge[i].x)/2,z:(edge[i-1].z+edge[i].z)/2});}
+    roads.push({name,width,points,closed,samples});
   }
-  for(let i=0;i<8;i++){
-    const a=i*Math.PI/4,b=(i+1)*Math.PI/4,m=(a+b)/2;
-    const p=[2.45*Math.cos(a),8.4,2.45*Math.sin(a)],q=[2.45*Math.cos(b),8.4,2.45*Math.sin(b)],tip=[4.65*Math.cos(m),7.45,4.65*Math.sin(m)];
-    triangle(p,tip,[0,11.7,0],i,tower);triangle(tip,q,[0,11.7,0],i+1,tower);
-    triangle(p,tip,[0,6.6,0],i+2,tower);
+  function roundedLoop(cx,cz,w,d,r,width,name){
+    const points=[];for(const [x,z,start] of [[cx+w/2-r,cz+d/2-r,0],[cx-w/2+r,cz+d/2-r,Math.PI/2],[cx-w/2+r,cz-d/2+r,Math.PI],[cx+w/2-r,cz-d/2+r,Math.PI*1.5]])for(let i=0;i<=8;i++){const a=start+i*Math.PI/16;points.push([x+r*Math.cos(a),z+r*Math.sin(a)]);}
+    road(points,width,name,true);
   }
-  mesh(new THREE.CylinderGeometry(2.5,2.5,.18,32),bronze,0,8.25,0,tower);pyramid(-.4,11.65,0,1.3,1.6,1.3,0,tower);pyramid(.6,11.65,.25,1.2,1.3,1.2,3,tower);
-  // Curved glass wings are the recognisable lower half of the star tower.
+  road([[1.8,26],[1.8,21],[1.8,16],[1.8,11],[1.8,7],[2,2],[2,-1.1]],4.8,'entrance-road');
+  roundedLoop(1.6,7.8,7.5,3.9,1.8,1.8,'oval-turning-loop');
+  roundedLoop(-8,-.5,12.3,12.4,2,2.3,'left-building-loop');
+  roundedLoop(9.6,7.9,13,12.3,2.1,2.4,'right-gallery-loop');
+  road([[-4.5,-1],[-4.5,2],[-4.5,5.5],[-2.5,7.6]],2.1,'arched-entrance-road');
+  road([[-13.5,6],[-13.5,11],[-11.7,14],[-7,14],[-2.5,12.8],[1.8,12.8]],2.1,'front-star-loop');
+  // Suppress markings inside a junction so connecting roads remain continuous.
+  for(const mark of roadMarks){
+    const covered=roads.some(r=>r.name!==mark.name&&r.samples.some((b,i)=>{
+      if(!i)return false;const a=r.samples[i-1],dx=b[0]-a[0],dz=b[1]-a[1],length=dx*dx+dz*dz;
+      const t=length?THREE.MathUtils.clamp(((mark.x-a[0])*dx+(mark.z-a[1])*dz)/length,0,1):0;
+      return (mark.x-a[0]-t*dx)**2+(mark.z-a[1]-t*dz)**2<(r.width/2-.07)**2;
+    }));
+    if(covered){mark.object.removeFromParent();mark.object.geometry.dispose();}
+  }
+  const ovalMarkings=group('original-oval-road-markings',1.6,.071,7.8,world);
+  for(let i=0;i<64;i++){const a=i*Math.PI/32,b=(i+1)*Math.PI/32;beam([2.2*Math.cos(a),0,.72*Math.sin(a)],[2.2*Math.cos(b),0,.72*Math.sin(b)],white,.024,ovalMarkings);}
+  for(const z of [15,21.5]){arrow(.65,.07,z,0,white,world,1.7);arrow(2.9,.07,z,Math.PI,white,world,1.7);}
+  // Main block: coloured squares and silver faceted pieces follow the visible rows.
+  const front=[['red','orange','red','smoke'],['smoke','blue','lime','yellow'],['orange','silver','silver','silver'],['clear','silver','silver','clear']];
+  const sides=[['purple','orange','red'],['red','lime','yellow'],['smoke','silver','yellow'],['silver','silver','clear']];
+  const main=shell('main-square-tile-house',0,-2*U,4,3,4,front,sides);
+  const roofRise=1.4*U,roofRun=1.5*U,slopeLength=Math.hypot(roofRise,roofRun);
   for(const side of [-1,1]){
-    const wing=new THREE.Group();wing.position.set(side*2.05,6.8,0);wing.rotation.z=side*.08;tower.add(wing);
-    const curve=[];for(let i=0;i<=32;i++){const a=i*Math.PI/32;curve.push([side*Math.sin(a)*1.9,-Math.cos(a)*1.1,0]);}
-    for(let i=1;i<curve.length;i++)beam(curve[i-1],curve[i],frame,.065,wing);
-    const g=new THREE.CircleGeometry(1.75,48,0,Math.PI);const pane=mesh(g,clear,0,0,0,wing);pane.rotation.z=side<0?Math.PI/2:-Math.PI/2;pane.scale.y=.7;
-    for(let i=0;i<5;i++){const a=(i+.5)*Math.PI/5;beam([0,0,0],[side*Math.sin(a)*1.9,-Math.cos(a)*1.1,0],frame,.035,wing);}
+    const slope=group('road-roof-'+side,0,4*U+roofRise/2,side*roofRun/2,main);slope.rotation.x=side*Math.atan2(roofRise,roofRun);
+    for(let row=0;row<2;row++)for(let col=0;col<4;col++)roadTile(U-.025,slopeLength/2-.025,(col-1.5)*U,.02,(row-.5)*slopeLength/2,slope,side===1&&row===1&&col>=2);
   }
-  for(const y of [3.22,6.22]){
-    box(3.3,.22,1.65,-6.4,y,-2.7,stone,architecture);rail([-8.05,-1.88],[-4.75,-1.88],y+.12);rail([-8.05,-3.52],[-4.75,-3.52],y+.12);
+  for(const side of [-1,1])triangle([side*2*U,4*U,-1.5*U],[side*2*U,4*U,1.5*U],[side*2*U,4*U+roofRise,0],side<0?'yellow':'red',main);
+  const ridge=4*U+roofRise;
+  const crown=[['blue','yellow','yellow','smoke'],['yellow','orange','yellow','yellow'],['red','purple','purple','red'],['yellow','yellow','yellow','yellow']];
+  for(let i=0;i<4;i++)pyramid((i-1.5)*U,ridge,0,U,.85*U,U,crown[i],main);
+  pyramid(.1*U,ridge+.65*U,-.1*U,.8*U,1.35*U,.8*U,['lime','green','yellow','lime'],main);
+  // Printed brick and chevron tiles on the upper road balcony.
+  function chevrons(x,y,z,w,h,parent=architecture){box(w,h,.075,x,y,z,yellow,parent);for(let i=0;i<3;i++){const cx=x-w*.34+i*w*.34;for(const s of [-1,1]){const v=[[cx-w*.07,y+s*h*.42,z+.05],[cx+w*.08,y,z+.05],[cx+w*.2,y,z+.05],[cx+w*.04,y+s*h*.42,z+.05]];surface(s<0?v.reverse():v,charcoal,parent);}}}
+  function brick(x,y,z,w,h,parent=architecture){box(w,h,.085,x,y,z,red,parent);for(let i=0;i<4;i++){box(w-.07,.035,.018,x,y-h*.37+i*h*.25,z+.052,white,parent);for(let j=0;j<3;j++)box(.03,h*.25,.019,x-w*.4+j*w*.4+(i%2)*w*.2,y-h*.375+i*h*.25+h*.12,z+.053,white,parent);}}
+  const balcony=group('yellow-black-brick-balcony',0,3*U,-.5*U+.55*U);
+  for(let c=0;c<5;c++)roadTile(U,U,(c-2)*U,0,0,balcony);
+  brick(-1.75*U,.4*U,.55*U,U*.9,U*.65,balcony);
+  for(let c=0;c<3;c++)chevrons((c-.3)*U,.4*U,.55*U,U*.95,U*.65,balcony);
+  for(const side of [-1,1]){for(let j=0;j<2;j++)square(side*2.5*U,.35*U,(j-.5)*U*.5,U*.65,'yellow',balcony,side*Math.PI/2);}
+  // Tall left tower: tapering red triangular body and the upward-open blue/yellow cap.
+  const tall=shell('red-tapered-tower',-3.55*U,-.6*U,1,1,2,[['yellow'],['smoke']],[['green'],['red']]);
+  for(let side=0;side<4;side++){
+    const a=side*Math.PI/2,b=(side+1)*Math.PI/2;
+    const lowA=[1.05*U*Math.cos(a),2*U,1.05*U*Math.sin(a)],lowB=[1.05*U*Math.cos(b),2*U,1.05*U*Math.sin(b)];
+    const topA=[.45*U*Math.cos(a),4.35*U,.45*U*Math.sin(a)],topB=[.45*U*Math.cos(b),4.35*U,.45*U*Math.sin(b)];
+    triangle(lowA,lowB,topA,side%2?'smoke':'red',tall);triangle(lowB,topB,topA,'red',tall);
+    triangle([0,4.2*U,0],[.95*U*Math.cos(a),5.25*U,.95*U*Math.sin(a)],[.95*U*Math.cos(b),5.25*U,.95*U*Math.sin(b)],['blue','yellow','blue','yellow'][side],tall);
   }
-  // A usable bridge joins the main floor to the tower.
-  box(4.3,.28,1.65,-5.75,3.02,3.35,stone,architecture);rail([-7.9,4.17],[-3.6,4.17],3.16);rail([-7.9,2.53],[-3.6,2.53],3.16);
-  for(const x of [-7.5,-4.1])box(.23,2.85,.23,x,1.45,3.35,frame,architecture);
-  // One continuous glazed gallery, descending through five connected bays.
-  const gallery=new THREE.Group();gallery.name='sloped-gallery';gallery.rotation.y=.5;gallery.position.set(1.3,0,5);architecture.add(gallery);
-  const gx=7.4,half=2.65,startZ=-5.3,bay=2.65;
-  function quad(a,b,c,d,material,parent=gallery){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute([...a,...b,...c,...a,...c,...d],3));g.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,1,0,1,1,0,0,1,1,0,1],2));g.computeVertexNormals();return mesh(g,material,0,0,0,parent);}
-  for(let i=0;i<5;i++){
-    const z=startZ+i*bay,y=12.5-i*1.42,nextY=y-1.42,deck=nextY-2.4;
-    const section=new THREE.Group();section.name='gallery-room';gallery.add(section);
-    const a=[gx-half,y,z],b=[gx+half,y,z],c=[gx+half,nextY,z+bay],d=[gx-half,nextY,z+bay];
-    quad(a,b,c,d,clear,section);
-    for(const [p,q] of [[a,b],[b,c],[c,d],[d,a]])beam(p,q,frame,.075,section);
-    triangle(a,d,[gx-half+1.45,(y+nextY)/2+.03,z+bay/2],i,section);
-    triangle(b,c,[gx+half-1.45,(y+nextY)/2+.03,z+bay/2],i+2,section);
-    for(const side of [-1,1]){
-      const x=gx+side*half;
-      quad([x,.3,z],[x,.3,z+bay],[x,nextY,z+bay],[x,y,z],clear,section);
-      beam([x,.22,z],[x,y,z],frame,.085,section);
-      beam([x,.22,z+bay],[x,nextY,z+bay],frame,.085,section);
-      triangle([x,y,z],[x,nextY,z+bay],[x,y-1.5,z],i+(side+1),section);
-      for(const floor of [3.22,6.22])if(y>floor+1.7)beam([x,floor,z],[x,floor,z+bay],frame,.075,section);
-    }
-    box(5.3,.25,bay-.03,gx,.18,z+bay/2,stone,section);
-    for(const floor of [.35,3.22,6.22])if(deck>floor+2.2){
-      box(5.3,.18,bay-.03,gx,floor,z+bay/2,stone,section);box(5.1,.04,bay-.12,gx,floor+.11,z+bay/2,wood,section);
-      lounge(gx+.25,floor+.14,z+.5,section);
-      for(const side of [-1,1])beam([gx+side*half,floor,z],[gx+side*half,floor,z+bay],frame,.07,section);
-      box(3.7,.035,.04,gx+.4,floor+2.3,z+.12,warm,section);
-    }
-    box(3.85,.2,bay-.03,gx+.6,deck,z+bay/2,stone,section);box(3.75,.04,bay-.12,gx+.6,deck+.13,z+bay/2,wood,section);
-    lounge(gx+.5,deck+.15,z+.5,section);
-    box(3.7,.035,.045,gx+.6,deck+2.3,z+.12,warm,section);
-    const lamp=new THREE.PointLight('#ffc77b',45,7,2);lamp.position.set(gx,deck+1.8,z+bay/2);section.add(lamp);lights.push(lamp);
+  // Smaller circular turret retains its triangular red walls and yellow cap.
+  const turret=shell('yellow-capped-small-turret',-4.2*U,1.5*U,1,1,1,[['smoke']],[['purple']]);
+  for(let i=0;i<8;i++){const a=i*Math.PI/4,b=(i+1)*Math.PI/4;triangle([.52*U*Math.cos(a),U,.52*U*Math.sin(a)],[.9*U*Math.cos(a),3*U,.9*U*Math.sin(a)],[.9*U*Math.cos(b),3*U,.9*U*Math.sin(b)],i%2?'red':'smoke',turret);}
+  const turretRing=mesh(new THREE.TorusGeometry(.94*U,.07,8,48),charcoal,0,3*U,0,turret);turretRing.rotation.x=Math.PI/2;
+  const turretRoad=mesh(new THREE.RingGeometry(.72*U,1.04*U,64),asphalt,0,3*U+.03,0,turret);turretRoad.rotation.x=-Math.PI/2;const turretEdge=mesh(new THREE.RingGeometry(1.005*U,1.025*U,64),white,0,3*U+.04,0,turret);turretEdge.rotation.x=-Math.PI/2;for(let i=0;i<24;i++){const a=i*Math.PI/12;const dash=box(.04,.012,.18,Math.cos(a)*.9*U,3*U+.05,Math.sin(a)*.9*U,white,turret);dash.rotation.y=-a;}
+  pyramid(0,3*U,0,1.7*U,.8*U,1.7*U,['yellow','yellow','smoke','yellow'],turret);
+  // Green magnetic-square portal with the original dark half-cylinder road arch.
+  const portal=group('green-arched-portal',-1.9*U,.16,1.4*U);
+  for(const side of [-1,1])for(let f=0;f<2;f++)square(side*.65*U,(f+.5)*U,0,U*.62,'green',portal,0);
+  for(const side of [-1,1])beam([side*.78*U,0,0],[side*.78*U,2*U,0],rims.lime,.09,portal);
+  function barrel(parent,r,y,depth){
+    for(let i=0;i<24;i++){const a=i*Math.PI/24,b=(i+1)*Math.PI/24;const v=[[-r*Math.cos(a),y+r*Math.sin(a),-depth/2],[-r*Math.cos(b),y+r*Math.sin(b),-depth/2],[-r*Math.cos(b),y+r*Math.sin(b),depth/2],[-r*Math.cos(a),y+r*Math.sin(a),depth/2]];surface(v,glazing.smoke,parent);for(const z of [-depth/2,depth/2])beam([-r*Math.cos(a),y+r*Math.sin(a),z],[-r*Math.cos(b),y+r*Math.sin(b),z],charcoal,.07,parent);}
+    for(let i=0;i<=4;i++){const a=i*Math.PI/4;beam([-r*Math.cos(a),y+r*Math.sin(a),-depth/2],[-r*Math.cos(a),y+r*Math.sin(a),depth/2],charcoal,.055,parent);}
   }
-  // A genuine stair flight runs the full length along the gallery's western edge.
-  const galleryFlight=stair(gx-half+.6,startZ+5*bay-.2,1,5.68,12.4,42,gallery);galleryFlight.position.y=3;
-  stair(gx,startZ+5*bay+4.3,5.3,3,4.5,18,gallery,true);
-  box(3.25,.28,2.1,4.25,6.2,-4,stone,architecture);rail([2.6,-2.95],[5.9,-2.95],6.34);rail([2.6,-5.05],[5.9,-5.05],6.34);
-  // A coloured observation bubble at the connection to the main house.
-  const bubble=mesh(new THREE.SphereGeometry(.9,32,24),glass[2],3.9,4.9,.8,architecture);bubble.scale.set(1,1.1,1);
-  for(const y of [4.35,5.4]){const ring=mesh(new THREE.TorusGeometry(.82,.04,8,48),edgeColors[2],3.9,y,.8,architecture);ring.rotation.x=Math.PI/2;}
-  function crane(x,y,z){
-    mesh(new THREE.CylinderGeometry(.3,.4,.24,16),edgeColors[0],x,y,z,architecture);
-    beam([x,y,z],[x,y+1.45,z],edgeColors[0],.095,architecture);
-    beam([x,y+1.45,z],[x+.9,y+2.35,z],edgeColors[0],.07,architecture);
-    beam([x+.9,y+2.35,z],[x+1.9,y+2.2,z],edgeColors[0],.06,architecture);
-    beam([x+1.9,y+2.2,z],[x+1.9,y+1.35,z],frame,.018,architecture);
-    mesh(new THREE.TorusGeometry(.1,.025,8,16,Math.PI*1.5),edgeColors[0],x+1.9,y+1.3,z,architecture);
+  barrel(portal,.87*U,2*U,.9*U);
+  // The foreground star uses the child's radiating long triangles and curved road pieces.
+  const star=shell('radial-star-tower',-3.55*U,4.8*U,2,2,2,[['orange','red'],['smoke','clear']],[['purple','orange'],['clear','smoke']]);
+  const corners=[[-U,3*U,-U],[U,3*U,-U],[U,3*U,U],[-U,3*U,U]];
+  for(let i=0;i<4;i++){
+    const a=corners[i],b=corners[(i+1)%4],mid=new THREE.Vector3(...a).add(new THREE.Vector3(...b)).multiplyScalar(.5),tip=[mid.x*2.2,2.6*U,mid.z*2.2];
+    triangle(a,b,[0,4.75*U,0],['orange','red','clear','red'][i],star);
+    triangle(a,b,tip,['yellow','red','cyan','green'][i],star);
+    triangle(a,b,[0,1.7*U,0],['red','red','red','smoke'][i],star);
   }
-  crane(1.15,3.55,1.15);crane(9,4,3.4);
-  // Rear terraces have real furniture and guardrails.
-  box(4,.25,4,12.2,.12,-5,stone);box(3.8,.06,3.8,12.2,.28,-5,wood);lounge(12.2,.32,-6.3,world);
-  beam([13.4,.3,-4.2],[13.4,2.8,-4.2],frame,.05);const umbrella=mesh(new THREE.ConeGeometry(1.8,.45,8),fabric,13.4,2.85,-4.2);umbrella.rotation.y=.3;
-  // Pool with coping, water and a small cascade.
-  box(4.2,.24,8.6,-12.5,.02,2.7,stone);box(3.75,.04,8.15,-12.5,.17,2.7,water);
-  box(.45,1.6,2,-13.9,.85,.4,stone);box(.035,1.25,1.35,-13.64,.83,.4,clear);box(.8,.07,2.1,-13.7,1.67,.4,stone);
-  box(4.9,.22,8.8,13,.04,-1.1,stone);box(4.45,.035,8.35,13,.18,-1.1,water);
-  for(let i=0;i<3;i++){
-    box(.8,.14,1.8,15.5,.39,-3.5+i*2.2,wood);
-    box(.74,.1,1.55,15.5,.52,-3.5+i*2.2,fabric);
-    const back=box(.74,.1,.6,15.5,.7,-4.1+i*2.2,fabric);back.rotation.x=.5;
+  for(const side of [-1,1]){
+    const arc=group('star-quarter-road-'+side,side*U,2.75*U,U+.025,star);
+    const r=1.15*U;for(let i=0;i<24;i++){const a=i*Math.PI/24,b=(i+1)*Math.PI/24;surface([[0,0,0],[side*r*Math.sin(a),-r*.7*Math.cos(a),0],[side*r*Math.sin(b),-r*.7*Math.cos(b),0]],glazing.smoke,arc);beam([side*r*Math.sin(a),-r*.7*Math.cos(a),0],[side*r*Math.sin(b),-r*.7*Math.cos(b),0],charcoal,.08,arc);for(const k of [.88,.68])if(k===.88||i%3!==0)beam([side*r*k*Math.sin(a),-r*.7*k*Math.cos(a),.035],[side*r*k*Math.sin(b),-r*.7*k*Math.cos(b),.035],white,.022,arc);}
+    for(let i=0;i<5;i++){const a=(i+.2)*Math.PI/5;beam([0,0,.02],[side*r*Math.sin(a),-r*.7*Math.cos(a),.02],charcoal,.045,arc);}
   }
-  // The estate sits beside a lake instead of an empty display surface.
-  const lakeShape=new THREE.Shape();
-  for(let i=0;i<=72;i++){
-    const a=i/72*Math.PI*2,r=1+.035*Math.sin(a*7)+.055*Math.cos(a*3);
-    const x=40+30*Math.cos(a)*r,z=-43+14*Math.sin(a)*r;
-    if(i===0)lakeShape.moveTo(x,z);else lakeShape.lineTo(x,z);
+  pyramid(-.25*U,4.7*U,0,.7*U,.8*U,.7*U,['yellow','yellow','blue','yellow'],star);
+  // Stepped annex: separate square bays and silver four-facet roof pieces, not one sloped glass plane.
+  const annexSpecs=[{x:3.1,z:.55,h:3,colors:[['red','yellow'],['cyan','silver'],['silver','clear']]},{x:4.35,z:2.05,h:2,colors:[['purple','orange'],['silver','silver']]},{x:5.6,z:3.55,h:1,colors:[['orange','purple']]}];
+  const annex=[];
+  for(let i=0;i<annexSpecs.length;i++){
+    const a=annexSpecs[i],g=shell('stepped-annex-'+i,a.x*U,a.z*U,2,2,a.h,a.colors,a.colors);annex.push(g);
+    for(let row=0;row<2;row++)for(let col=0;col<2;col++){const x=(col-.5)*U,z=(row-.5)*U,y=a.h*U+.09;panel([[x-U/2,y,z-U/2],[x-U/2,y,z+U/2],[x+U/2,y,z+U/2],[x+U/2,y,z-U/2]],'silver',g,true);}
+    for(let j=0;j<2;j++)for(const side of [-1,1])triangle([side*U,a.h*U,(j-1)*U],[side*U,a.h*U,j*U],[side*U,a.h*U+.75*U,(j-.5)*U],['yellow','lime','magenta','yellow'][(j+(side+1)+i)%4],g);
   }
-  const lake=mesh(new THREE.ShapeGeometry(lakeShape),water,0,-.12,0);lake.rotation.x=-Math.PI/2;
-  lake.scale.y=-1;lake.material.side=THREE.DoubleSide;
-  // Arrival court and a planted circular island.
-  mesh(new THREE.CylinderGeometry(2.45,2.6,.3,64),stone,.8,.1,7.3);mesh(new THREE.CylinderGeometry(2.25,2.25,.07,64),grass,.8,.3,7.3);
-  const poolRim=mesh(new THREE.TorusGeometry(1.22,.12,8,48),stone,.8,.35,7.3);poolRim.rotation.x=Math.PI/2;mesh(new THREE.CylinderGeometry(1.1,1.1,.02,48),water,.8,.37,7.3);
-  pyramid(.8,.4,7.3,1.1,1.7,1.1,0);
-  for(let i=0;i<6;i++){const a=i*Math.PI/3;triangle([.8,2.1,7.3],[.8+1.4*Math.cos(a),1.2,7.3+1.4*Math.sin(a)],[.8, .65,7.3],i);}
-  // Photo-scanned planting is loaded by the renderer; keep the view corridor clear.
-  const planting={
-    trees:[[-14,-10,5.5],[-13,8,4.2],[-4,-12,5.5],[11,-10,5],[14,5,4.2],[-20,-20,10],[-10,-23,11],[2,-24,10],[15,-23,11],[24,-19,10],[-27,-9,10]],
-    shrubs:[],plants:[]
-  };
-  for(let i=0;i<26;i++){const z=-12+i*.85;planting.shrubs.push([-15.6,z,.65],[15.7,z,.7]);}
-  for(let i=0;i<25;i++){const x=-14+i*1.2;if(Math.abs(x)>4.5)planting.shrubs.push([x,11.4,.55]);}
-  for(let i=0;i<20;i++){const a=i*Math.PI/10;planting.shrubs.push([.8+2.1*Math.cos(a),7.3+2.1*Math.sin(a),.3]);}
-  for(const y of [3.5,6.5])for(const x of [-5.4,-2.7,1.8])planting.plants.push([x,y,.65,.9]);
-  for(const [x,z] of [[-3,1],[0,1],[-10,6],[10,7],[11,-4],[-12,-6]])planting.plants.push([x,.2,z,1.3]);
-  for(let i=0;i<16;i++){const a=i*6.28/16;const x=.8+2.1*Math.cos(a),z=7.3+2.1*Math.sin(a);mesh(new THREE.SphereGeometry(.09,6,4),i%2?fabric:glass[1],x,.58,z);}
-  // Lamps actually illuminate nearby surfaces at night.
-  for(const [x,z] of [[-3.4,12.5],[3.4,12.5],[-12,8],[12,8],[-12,-8],[12,-8],[-3,4],[4,2]]){
-    const y=Math.abs(z-12.5)<.1?2.2:.9;box(.15,y,.15,x,y/2,z,frame);box(.24,.32,.24,x,y+.13,z,warm);box(.32,.06,.32,x,y+.33,z,frame);
-    const light=new THREE.PointLight('#ffcf8a',.4,5,2);light.position.set(x,y+.2,z);world.add(light);lights.push(light);
+  function bridge(a,b,w,name){const g=group(name);const av=new THREE.Vector3(...a),bv=new THREE.Vector3(...b),dir=bv.clone().sub(av),n=new THREE.Vector3(-dir.z,0,dir.x).normalize().multiplyScalar(w/2);const verts=[av.clone().add(n).toArray(),bv.clone().add(n).toArray(),bv.clone().sub(n).toArray(),av.clone().sub(n).toArray()];panel(verts,'clear',g);for(const side of [-1,1]){const p=av.clone().addScaledVector(n,side),q=bv.clone().addScaledVector(n,side);triangle(p.toArray(),q.toArray(),p.clone().lerp(q,.5).add(new THREE.Vector3(0,U*.55,0)).toArray(),side<0?'lime':'yellow',g);}return g;}
+  bridge([2.1*U,3*U,-.1*U],[3.1*U,3*U,.55*U],U,'upper-triangle-link');
+  bridge([3.2*U,3*U,1.5*U],[4.35*U,2*U,2.05*U],1.5*U,'descending-link-one');
+  bridge([4.45*U,2*U,3*U],[5.6*U,U,3.55*U],1.5*U,'descending-link-two');
+  // Two large magnetic stair components: left pink, right blue, with the original three-rung outline.
+  const stairsOuter=group('pink-blue-magnetic-stairs',5.6*U,.12,4.6*U);
+  for(const [side,color] of [[-1,'magenta'],[1,'cyan']]){
+    const x=side*.52*U;
+    for(let i=0;i<3;i++){const y=(3-i)*U/3,z=(i+.5)*U*.42;panel([[x-U*.48,y,z-U*.21],[x+U*.48,y,z-U*.21],[x+U*.48,y,z+U*.21],[x-U*.48,y,z+U*.21]],color,stairsOuter);box(U*.96,U/3,.065,x,y-U/6,z+U*.21,glazing[color],stairsOuter);}
+    for(const s of [-1,1])beam([x+s*.5*U,U,0],[x+s*.5*U,.08,1.3*U],rims[color],.075,stairsOuter);
   }
-  function car(x,z,color,angle){
-    const group=new THREE.Group();group.position.set(x,.18,z);group.rotation.y=angle;world.add(group);const paint=mat('car'+color,color,{metalness:.65,roughness:.22});
-    box(1.65,.45,3.7,0,.45,0,paint,group);box(1.48,.62,1.9,0,.95,-.15,roof,group);box(1.47,.055,1.85,0,1.28,-.15,paint,group);
-    for(const sx of [-1,1])for(const sz of [-1,1]){const wheel=mesh(new THREE.CylinderGeometry(.34,.34,.21,24),frame,sx*.8,.34,sz*1.15,group);wheel.rotation.z=Math.PI/2;const hub=mesh(new THREE.CylinderGeometry(.22,.22,.23,16),bronze,sx*.82,.34,sz*1.15,group);hub.rotation.z=Math.PI/2;}
-    for(const s of [-1,1])box(.42,.11,.045,s*.49,.6,1.88,warm,group);
+  // Original green hemisphere on the outer side of the annex.
+  const bubble=mesh(new THREE.SphereGeometry(.55*U,28,20),glazing.green,3.0*U,2*U,1.7*U);bubble.name='green-magnetic-hemisphere';parts[bubble.name]=bubble;
+  // Yellow cranes retain square bases, articulated booms, pulley wheels and hanging hooks.
+  function crane(x,y,z,angle,name){const g=group(name,x,y,z);g.rotation.y=angle;square(0,.45*U,.45*U,.9*U,'yellow',g);square(.45*U,.45*U,0,.9*U,'yellow',g,Math.PI/2);mesh(new THREE.CylinderGeometry(.3,.42,.18,16),yellow,0,.95*U,0,g);const nodes=[[0,U,0],[0,1.65*U,0],[.65*U,2.35*U,0],[1.35*U,2.23*U,0]];for(let i=1;i<nodes.length;i++){beam(nodes[i-1],nodes[i],yellow,.105,g);mesh(new THREE.SphereGeometry(.14,10,8),yellow,...nodes[i],g);}beam(nodes[3],[1.35*U,1.35*U,0],charcoal,.025,g);mesh(new THREE.TorusGeometry(.15,.04,8,20,Math.PI*1.6),yellow,1.35*U,1.28*U,0,g);return g;}
+  crane(2.05*U,.17,.95*U,-.25,'main-yellow-crane');crane(4.1*U,2*U,1.8*U,.3,'annex-yellow-crane');
+  // Small outposts and the red/blue ground-level playhouse are part of the child's composition.
+  const guard=shell('orange-yellow-outpost',2.8*U,6.25*U,1,1,1,[['orange']],[['yellow']]);pyramid(0,U,0,U,.85*U,U,['yellow','yellow','lime','yellow'],guard);
+  const playhouse=group('red-blue-small-playhouse',-1.0*U,.12,3.8*U);box(.65*U,.65*U,.65*U,0,.325*U,0,red,playhouse);pyramid(0,.65*U,0,.78*U,.4*U,.78*U,['blue','blue','blue','purple'],playhouse);box(.2*U,.38*U,.03,0,.22*U,.34*U,charcoal,playhouse);
+  // Flat toy figures remain mounted to the side of the roof tower and the stepped annex.
+  function figure(x,y,z,shirt,pants,parent=architecture,scale=1){const g=group('original-figure-'+x+'-'+y,x,y,z,parent);g.scale.setScalar(scale);const skin=materials.skin||mat('skin','#efcfa6'),hair=charcoal;mesh(new THREE.CircleGeometry(.27,24),skin,0,1.45,.04,g);const cap=mesh(new THREE.CircleGeometry(.29,24,0,Math.PI),hair,0,1.51,.05,g);box(.42,.58,.045,0,.93,0,rims[shirt],g);for(const side of [-1,1]){beam([side*.18,1.12,0],[side*.55,1.47,0],skin,.075,g);beam([side*.13,.64,0],[side*.33,.08,0],rims[pants],.085,g);mesh(new THREE.CircleGeometry(.028,8),charcoal,side*.09,1.46,.055,g);}return g;}
+  const figurineStack=group('red-square-figure-tower',2.25*U,4*U,-.45*U);
+  square(0,-.5*U,0,U,'red',figurineStack);triangle([U/2,-U,0],[U/2,0,0],[1.15*U,-.5*U,0],'lime',figurineStack);
+  for(let i=0;i<2;i++){square(0,(i+.5)*U,0,U,'red',figurineStack);triangle([U/2,i*U,0],[U/2,(i+1)*U,0],[1.15*U,(i+.5)*U,0],['lime','cyan','yellow'][i],figurineStack);figure(0,i*U+.12,.1,['blue','red','yellow'][i],['green','blue','green'][i],figurineStack,1.25);}
+  pyramid(0,2*U,0,U,.8*U,U,['yellow','yellow','yellow','red'],figurineStack);
+  figure(3.8*U,3*U+.2,.65*U,'yellow','blue',architecture,1.25);figure(5*U,2*U+.2,3.0*U,'blue','green',architecture,1.25);
+  // Roadside signs are geometry and printed symbols, preserved as objects rather than UI labels.
+  const traffic=group('original-traffic-furniture',0,0,0,world);
+  function sign(x,z,kind,angle=0){const g=group('traffic-sign-'+kind+'-'+x+'-'+z,x,.08,z,traffic);g.rotation.y=angle;box(.55,.12,.44,0,.06,0,rims.blue,g);beam([0,.1,0],[0,2.0,0],white,.065,g);
+    if(kind==='warning'){surface([[-.6,2.03,.02],[.6,2.03,.02],[0,3.04,.02]],yellow,g);for(const [a,b] of [[[ -.54,2.09,.04],[.54,2.09,.04]],[[.54,2.09,.04],[0,2.96,.04]],[[0,2.96,.04],[-.54,2.09,.04]]])beam(a,b,charcoal,.026,g);box(.07,.35,.03,0,2.53,.065,charcoal,g);mesh(new THREE.CircleGeometry(.047,12),charcoal,0,2.23,.065,g);}
+    else if(kind==='light'){box(.46,1.25,.22,0,2.5,0,charcoal,g);for(const [i,color] of ['red','yellow','green'].entries())mesh(new THREE.CircleGeometry(.145,20),rims[color],0,2.88-i*.38,.13,g);}
+    else if(kind==='parking'){box(.65,.75,.055,0,2.4,0,rims.blue,g);box(.065,.5,.035,-.14,2.4,.045,white,g);box(.3,.06,.035,0,2.62,.045,white,g);box(.3,.06,.035,0,2.41,.045,white,g);box(.06,.25,.035,.14,2.515,.045,white,g);}
+    else {mesh(new THREE.CircleGeometry(.42,32),red,0,2.4,.035,g);mesh(new THREE.CircleGeometry(.33,32),white,0,2.4,.045,g);if(kind==='no-entry')box(.52,.13,.035,0,2.4,.07,red,g);else{const slash=box(.65,.07,.035,0,2.4,.08,red,g);slash.rotation.z=-Math.PI/4;box(.3,.13,.04,0,2.4,.07,charcoal,g);}}
+    return g;
   }
-  car(-3.5,7.3,'#e3e1d7',.4);car(3.1,3.2,'#252c2e',Math.PI);car(11,18.6,'#964735',Math.PI/2);
-  return {world,architecture,glass,warm,lights,stairs,materials,planting};
+  sign(-1.45,18.5,'no-entry');sign(-1.45,16.9,'warning');sign(5,21.4,'parking');sign(5,17.3,'light');sign(-5.1,6,'light');sign(-12.1,9.4,'warning');sign(17.8,13,'warning');sign(17.8,15.2,'parking');sign(-.9,11.7,'restriction');
+  const wallSignal=group('tower-mounted-traffic-light',-3.55*U,1.5*U,-.07*U);box(.45,1.2,.12,0,0,0,charcoal,wallSignal);for(const [i,color] of ['red','yellow','green'].entries())mesh(new THREE.CircleGeometry(.13,18),rims[color],0,.36-i*.36,.08,wallSignal);
+  function bollard(x,z,h=1.05){box(.27,.09,.27,x,.05,z,yellow,traffic);mesh(new THREE.CylinderGeometry(.11,.13,h,12),yellow,x,h/2+.08,z,traffic);for(let i=0;i<3;i++)mesh(new THREE.CylinderGeometry(.115,.115,.13,12),charcoal,x,.25+i*.3,z,traffic);}
+  function barrier(x,z){const g=group('red-white-entry-barrier',x,.05,z,traffic);for(const side of [-1,1]){box(.38,1.1,.4,side*2.2,.55,0,yellow,g);for(let k=0;k<3;k++)box(.4,.14,.42,side*2.2,.18+k*.31,0,charcoal,g);}box(4.6,.13,.13,0,1.12,0,white,g);for(let i=0;i<8;i++){const stripe=box(.24,.145,.145,-2+i*.56,1.12,0,red,g);stripe.rotation.z=.2;}}
+  barrier(1.8,24.4);barrier(-3.1,5.7);
+  for(let i=0;i<8;i++){bollard(-1.4,14.2+i*1.35);bollard(5,14.2+i*1.35);}
+  for(const [x,z] of [[-2,22],[-2,19],[5.8,23.5],[-6,13],[-10,14]]){mesh(new THREE.ConeGeometry(.2,.65,16),yellow,x,.39,z,traffic);box(.47,.06,.47,x,.05,z,yellow,traffic);}
+  // Coloured panel fence follows the original foreground edge; no invented masonry enclosure.
+  for(let i=0;i<7;i++){const x=7+i*1.65,z=21+i*.4,c=['yellow','purple','green','cyan','magenta','smoke','lime'][i];square(x,.85,z,1.65,c,traffic,-.24);if(i%2===0)triangle([x-.82,1.67,z],[x+.82,1.67,z],[x,2.7,z],c,traffic);}
+  function car(x,z,color,angle=0,long=false){const g=group('original-vehicle-'+x+'-'+z,x,.12,z,world);g.rotation.y=angle;const paint=materials['car-'+color]||mat('car-'+color,color,{metalness:.45,roughness:.25}),length=long?3.8:2.6;box(1.18,.4,length,0,.4,0,paint,g);box(1.04,.48,length*.55,0,.82,-.15,glazing.smoke,g);box(1.07,.06,length*.55,0,1.09,-.15,paint,g);for(const sx of [-1,1])for(const sz of [-1,1]){const wheel=mesh(new THREE.CylinderGeometry(.25,.25,.16,16),charcoal,sx*.6,.25,sz*length*.3,g);wheel.rotation.z=Math.PI/2;}for(const side of [-1,1])box(.24,.08,.025,side*.33,.48,length/2+.015,warm,g);}
+  car(.6,19.4,'#bb252b');car(3.0,19.4,'#246bab');car(.6,15.7,'#f0f0de',0,true);car(2.8,3.8,'#f0f0e6',.1);car(-.6,1.5,'#aa2733',0,true);car(-5.9,3.8,'#1aba6a');
+  const planting={trees:[[-27,-12,7],[-24,-22,9],[-12,-25,9],[0,-26,10],[13,-24,9],[25,-19,9],[29,-7,8]],shrubs:[],plants:[]};
+  for(const y of [U+.25,2*U+.25,3*U+.25])planting.plants.push([-2,y,-4.3,.85]);
+  return {world,architecture,glass,warm,lights,stairs,materials,planting,parts,roads,palette,moduleSize:U};
 }
