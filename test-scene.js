@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { buildWorld } from './dist/scene.js';
+import { Box3 } from './dist/vendor/three.module.js';
+const {world,glass,warm}=buildWorld();
+let meshes=0;
+world.updateMatrixWorld(true);
+world.traverse(node=>{if(!node.isMesh)return;meshes++;const positions=node.geometry.getAttribute('position');assert(positions&&positions.count>0);assert(Array.from(positions.array).every(Number.isFinite),'Model coordinates must be finite');assert(node.material,'Every surface has a material');});
+const bounds=new Box3().setFromObject(world);
+assert(meshes>100,'Architecture must include detailed geometry');
+assert(bounds.min.y>-.5&&bounds.max.y<15,'All structures must stay on the landscape and within the intended skyline');
+assert.equal(glass.length,6);assert(warm.emissiveIntensity>0);
+console.log(`PASS: ${meshes} model surfaces; valid geometry, materials and architectural bounds.`);
