@@ -20,7 +20,7 @@ try {
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;
   host.appendChild(renderer.domElement);
-  let pathTracer=null,pathReady=false,preparingTrace=false;
+  let pathTracer=null,pathReady=false,preparingTrace=false,requestedTrace=false;
   const renderStatus=document.querySelector('#render-status'),quality=document.querySelector('#quality'),refinedFrame=document.querySelector('#refined-frame');
   let lastRenderLabel='';
   function status(label){if(label!==lastRenderLabel){renderStatus.textContent=label;lastRenderLabel=label;}}
@@ -31,7 +31,9 @@ try {
   const cleanQuad=new FullScreenQuad(new THREE.MeshBasicMaterial({map:cleanTexture,toneMapped:false,depthTest:false,depthWrite:false}));
   const rawMaterial=new THREE.MeshBasicMaterial({depthTest:false,depthWrite:false}),rawQuad=new FullScreenQuad(rawMaterial);
   function invalidateCleanFrame(){refinedFrame.hidden=true;frameRevision++;cleanRevision=-1;lastCleanSample=0;delete renderStatus.dataset.cleanSamples;}
+  function initializeDenoiser(){
   import('./vendor/ai-denoiser.js').then(({Denoiser})=>Denoiser.create({precision:'fp16',quality:'balanced',weightsUrl:new URL('./assets/denoiser/',import.meta.url).href.replace(/\/$/,''),wasmPaths:new URL('./vendor/ort/',import.meta.url).href,maxRunPixels:1280*1080,graphCapture:false,splitAux:false})).then(value=>{aiDenoiser=value;renderStatus.dataset.denoiser='ai';quality.title='光线追踪与高质量去噪';}).catch(error=>{renderStatus.dataset.denoiser='spatial';console.warn('High quality denoising unavailable; spatial filtering remains active',error);});
+  }
   async function captureCleanFrame(target){
     const revision=frameRevision,sample=Math.floor(pathTracer.samples);aiBusy=true;lastCleanSample=sample;
     let inputTexture=null,readback=null;
@@ -147,7 +149,7 @@ try {
   const auto=document.querySelector('#auto');auto.onclick=()=>{controls.autoRotate=!controls.autoRotate;auto.setAttribute('aria-pressed',controls.autoRotate);};
   controls.addEventListener('start',()=>{transition=null;});
   controls.addEventListener('change',()=>{if(pathReady){invalidateCleanFrame();pathTracer.pausePathTracing=false;pathTracer.updateCamera();}});
-  quality.onclick=()=>{if(!pathReady)return;refinedFrame.hidden=true;pathTracer.enablePathTracing=!pathTracer.enablePathTracing;quality.setAttribute('aria-pressed',pathTracer.enablePathTracing);pathTracer.pausePathTracing=false;pathTracer.reset();};
+  quality.onclick=async()=>{requestedTrace=!requestedTrace;invalidateCleanFrame();quality.setAttribute('aria-pressed',requestedTrace);if(!requestedTrace)status('实时浏览');if(requestedTrace&&!pathReady)await preparePathTracing();if(pathReady){pathTracer.enablePathTracing=requestedTrace;pathTracer.pausePathTracing=false;pathTracer.reset();}};
   const toggle=document.querySelector('#daynight');
   toggle.onclick=()=>{
     night=!night;document.body.classList.toggle('night',night);toggle.setAttribute('aria-pressed',night);toggle.setAttribute('aria-label',night?'切换日光':'切换夜景');
@@ -166,14 +168,17 @@ try {
   function frame(time){const dt=Math.min((time-previous)/1000,.05);previous=time;if(transition){camera.position.lerp(transition.pos,.085);controls.target.lerp(transition.target,.085);if(camera.position.distanceTo(transition.pos)<.025)transition=null;}controls.update(dt);
     if(pathReady){
       pathTracer.renderSample();renderStatus.dataset.samples=String(Math.floor(pathTracer.samples));
-      status(!pathTracer.enablePathTracing?'快速浏览':pathTracer.isCompiling?'准备写实光影…':pathTracer.samples<1?'调整视角中':pathTracer.samples<192?'光影正在细化…':'写实光影');
+      status(!pathTracer.enablePathTracing?'实时浏览':pathTracer.isCompiling?'准备写实光影…':pathTracer.samples<1?'调整视角中':pathTracer.samples<192?'光影正在细化…':'写实光影');
       if(pathTracer.samples>=192)pathTracer.pausePathTracing=true;
     }else renderer.render(scene,camera);}
   renderer.setAnimationLoop(frame);
-  manager.onLoad=async()=>{
-    if(preparingTrace)return;preparingTrace=true;
+  manager.onLoad=()=>{
     if(missingAsset){loading.textContent='部分材质未加载，可刷新重试';loading.classList.add('asset-warning');}else loading.remove();
-    status('准备写实光影…');
+    quality.disabled=false;status('实时浏览');
+  };
+  async function preparePathTracing(){
+    if(preparingTrace)return;preparingTrace=true;
+    initializeDenoiser();status('准备精细光影…');
     try{
       // Bake without changing the visible scene: the ray tracer cannot read GPU instance transforms.
       scene.updateMatrixWorld(true);const instances=[];scene.traverse(o=>{if(o.isInstancedMesh)instances.push(o);});
@@ -191,9 +196,9 @@ try {
           if(cleanRevision===frameRevision)cleanQuad.render(outputRenderer);else outputRenderer.render(scene,camera);
         }else{denoiseMaterial.map=target.texture;denoiseMaterial.opacity=quad.material.opacity;const autoClear=outputRenderer.autoClear;outputRenderer.autoClear=false;denoiseQuad.render(outputRenderer);outputRenderer.autoClear=autoClear;}
       };
-      await pathTracer.setSceneAsync(scene,camera,{onProgress:value=>status('准备写实光影 '+Math.round(value*100)+'%')});
-      pathReady=true;quality.disabled=false;pathTracer.updateCamera();status('光影正在细化…');
-    }catch(error){status('写实渲染暂未启动，当前为快速浏览');quality.setAttribute('aria-pressed','false');console.error('Path tracing initialization failed',error);}
+      await pathTracer.setSceneAsync(scene,camera,{onProgress:value=>{if(requestedTrace)status('准备精细光影 '+Math.round(value*100)+'%');}});
+      pathReady=true;pathTracer.enablePathTracing=requestedTrace;pathTracer.updateCamera();status(requestedTrace?'光影正在细化…':'实时浏览');
+    }catch(error){preparingTrace=false;requestedTrace=false;status('精细光影未能启动，继续实时浏览');quality.setAttribute('aria-pressed','false');console.error('Path tracing initialization failed',error);}
   };
   document.addEventListener('visibilitychange',()=>renderer.setAnimationLoop(document.hidden?null:frame));
   renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();renderer.setAnimationLoop(null);host.insertAdjacentHTML('beforeend','<div id="loading" role="alert">画面暂时中断，请刷新页面继续探索。</div>');});
