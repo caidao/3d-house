@@ -14,7 +14,7 @@ export function buildWorld(textures={}) {
   const rims=Object.fromEntries(keys.map(k=>[k,mat('rim-'+k,k==='clear'?'#abbebc':palette[k],{metalness:.28,roughness:.21})]));
   const charcoal=mat('charcoal','#252b2b',{metalness:.4,roughness:.35}),asphalt=mat('asphalt','#1c2326',{roughness:.92});
   const white=mat('white','#eef4ed'),yellow=rims.yellow,red=rims.red,wood=mat('wood','#cdae8a'),fabric=mat('fabric','#efe1c5');
-  const paving=mat('paving','#d0cec2'),grass=mat('grass','#a0ac77'),warm=mat('warm','#ffdfa1',{emissive:'#ffc976',emissiveIntensity:1.4});
+  const paving=mat('paving','#d0cec2'),grass=mat('grass','#5c832d',{roughness:1}),warm=mat('warm','#ffdfa1',{emissive:'#ffc976',emissiveIntensity:1.4});
   function group(name,x=0,y=0,z=0,parent=architecture){const g=new THREE.Group();g.name=name;g.position.set(x,y,z);parent.add(g);parts[name]=g;return g;}
   function mesh(g,m,x=0,y=0,z=0,parent=architecture){const o=new THREE.Mesh(g,m);o.position.set(x,y,z);o.castShadow=!m.transparent;o.receiveShadow=true;parent.add(o);return o;}
   function box(w,h,d,x,y,z,m=charcoal,parent=architecture){const g=new THREE.BoxGeometry(w,h,d);if(m.map){const p=g.attributes.position,n=g.attributes.normal,uv=g.attributes.uv;for(let i=0;i<p.count;i++)uv.setXY(i,(Math.abs(n.getX(i))>.5?p.getZ(i)+z:p.getX(i)+x)/2,(Math.abs(n.getY(i))>.5?p.getZ(i)+z:p.getY(i)+y)/2);}return mesh(g,m,x,y,z,parent);}
@@ -58,8 +58,7 @@ export function buildWorld(textures={}) {
     return g;
   }
   // Roads are distinct original features, not landscaping substitutes.
-  const terrain=box(230,.3,230,0,-.34,0,grass,world);terrain.name='terrain';
-  box(46,.14,46,0,-.12,7,paving,world);
+  const terrain=box(46,.1,46,0,-.14,7,grass,world);terrain.name='terrain';
   function road(points,width,name,closed=false){
     const pts=points.map(p=>new THREE.Vector3(p[0],.03,p[1]));
     const curve=new THREE.CatmullRomCurve3(pts,closed,'centripetal'),count=Math.max(60,Math.ceil(curve.getLength()*5));
@@ -169,12 +168,28 @@ export function buildWorld(textures={}) {
   bridge([2.1*U,3*U,-.1*U],[3.1*U,3*U,.55*U],U,'upper-triangle-link');
   bridge([3.2*U,3*U,1.5*U],[4.35*U,2*U,2.05*U],1.5*U,'descending-link-one');
   bridge([4.45*U,2*U,3*U],[5.6*U,U,3.55*U],1.5*U,'descending-link-two');
-  // Two large magnetic stair components: left pink, right blue, with the original three-rung outline.
-  const stairsOuter=group('pink-blue-magnetic-stairs',5.6*U,.12,4.6*U);
+  // Two joined stair modules: retain the pink/blue halves and the original three-step silhouette.
+  // Side cheeks close the profile; the rear hinge meets the annex floor and the feet meet the road.
+  const lastAnnex=annexSpecs.at(-1),stairBase=.12,stairRise=lastAnnex.h*U+.16+.07-stairBase,stepRun=U*.36;
+  const stairsOuter=group('pink-blue-magnetic-stairs',lastAnnex.x*U,stairBase,(lastAnnex.z+1)*U);
+  stairsOuter.userData.connection={topY:stairBase+stairRise,annexFloorY:lastAnnex.h*U+.23,backZ:(lastAnnex.z+1)*U,steps:3,run:3*stepRun};
   for(const [side,color] of [[-1,'magenta'],[1,'cyan']]){
-    const x=side*.52*U;
-    for(let i=0;i<3;i++){const y=(3-i)*U/3,z=(i+.5)*U*.42;panel([[x-U*.48,y,z-U*.21],[x+U*.48,y,z-U*.21],[x+U*.48,y,z+U*.21],[x-U*.48,y,z+U*.21]],color,stairsOuter);box(U*.96,U/3,.065,x,y-U/6,z+U*.21,glazing[color],stairsOuter);}
-    for(const s of [-1,1])beam([x+s*.5*U,U,0],[x+s*.5*U,.08,1.3*U],rims[color],.075,stairsOuter);
+    const half=group('stair-half-'+color,side*.5*U,0,0,stairsOuter),width=U*.98;
+    for(let i=0;i<3;i++){
+      const high=stairRise*(3-i)/3,low=stairRise*(2-i)/3,start=i*stepRun,end=(i+1)*stepRun;
+      panel([[-width/2,high,start],[width/2,high,start],[width/2,high,end],[-width/2,high,end]],color,half);
+      surface([[-width/2,low,end],[width/2,low,end],[width/2,high,end],[-width/2,high,end]],glazing[color],half);
+      for(const edge of [-1,1]){
+        const x=edge*width/2;
+        surface([[x,0,start],[x,high,start],[x,high,end],[x,0,end]],glazing[color],half);
+        beam([x,high,start],[x,high,end],rims[color],.07,half);beam([x,high,end],[x,low,end],rims[color],.07,half);
+      }
+    }
+    for(const edge of [-1,1]){
+      const x=edge*width/2;beam([x,0,0],[x,stairRise,0],rims[color],.07,half);beam([x,0,0],[x,0,3*stepRun],rims[color],.07,half);
+      box(.18,.1,.22,x,-.04,3*stepRun-.08,charcoal,half);
+    }
+    box(width,.12,.14,0,stairRise-.035,-.055,rims[color],half);
   }
   // Original green hemisphere on the outer side of the annex.
   const bubble=mesh(new THREE.SphereGeometry(.55*U,28,20),glazing.green,3.0*U,2*U,1.7*U);bubble.name='green-magnetic-hemisphere';parts[bubble.name]=bubble;
@@ -211,7 +226,27 @@ export function buildWorld(textures={}) {
   for(let i=0;i<7;i++){const x=7+i*1.65,z=21+i*.4,c=['yellow','purple','green','cyan','magenta','smoke','lime'][i];square(x,.85,z,1.65,c,traffic,-.24);if(i%2===0)triangle([x-.82,1.67,z],[x+.82,1.67,z],[x,2.7,z],c,traffic);}
   function car(x,z,color,angle=0,long=false){const g=group('original-vehicle-'+x+'-'+z,x,.12,z,world);g.rotation.y=angle;const paint=materials['car-'+color]||mat('car-'+color,color,{metalness:.45,roughness:.25}),length=long?3.8:2.6;box(1.18,.4,length,0,.4,0,paint,g);box(1.04,.48,length*.55,0,.82,-.15,glazing.smoke,g);box(1.07,.06,length*.55,0,1.09,-.15,paint,g);for(const sx of [-1,1])for(const sz of [-1,1]){const wheel=mesh(new THREE.CylinderGeometry(.25,.25,.16,16),charcoal,sx*.6,.25,sz*length*.3,g);wheel.rotation.z=Math.PI/2;}for(const side of [-1,1])box(.24,.08,.025,side*.33,.48,length/2+.015,warm,g);}
   car(.6,19.4,'#bb252b');car(3.0,19.4,'#246bab');car(.6,15.7,'#f0f0de',0,true);car(2.8,3.8,'#f0f0e6',.1);car(-.6,1.5,'#aa2733',0,true);car(-5.9,3.8,'#1aba6a');
-  const planting={trees:[[-27,-12,7],[-24,-22,9],[-12,-25,9],[0,-26,10],[13,-24,9],[25,-19,9],[29,-7,8]],shrubs:[],plants:[]};
+  // Landscape follows the supplied render references while leaving the original road network open.
+  const planting={trees:[[-18.5,18.5,4.1],[-7,22.5,3.3],[-18,-10,4.5],[20,-8,4.8]],shrubs:[],plants:[]};
+  const garden=group('reference-garden',0,0,0,world);
+  function plantedBed(x,z,w,d){
+    box(w+.22,.12,d+.22,x,-.015,z,paving,garden);box(w,.08,d,x,.055,z,grass,garden);
+    for(let i=0;i<=Math.floor(w/.65);i++){const px=x-w/2+i*w/Math.floor(w/.65);planting.shrubs.push([px,z-d/2,.46],[px,z+d/2,.46]);}
+    for(let i=1;i<Math.floor(d/.65);i++){const pz=z-d/2+i*d/Math.floor(d/.65);planting.shrubs.push([x-w/2,pz,.46],[x+w/2,pz,.46]);}
+  }
+  plantedBed(-6.7,21,5.3,6.4);plantedBed(10.3,18.1,4.3,3.4);plantedBed(-19,1.5,3,15);plantedBed(20,4,2.7,17);
+  box(4.9,.1,4.8,-17,.01,14.7,paving,garden);
+  mesh(new THREE.CylinderGeometry(.8,.8,.09,32),wood,-17,.8,14.7,garden);beam([-17,.08,14.7],[-17,.75,14.7],charcoal,.095,garden);
+  for(const side of [-1,1]){box(.7,.11,.64,-17+side*1.35,.48,14.7,wood,garden);box(.14,.65,.64,-17+side*1.65,.75,14.7,wood,garden);for(const dz of [-.2,.2])box(.07,.43,.07,-17+side*1.35,.23,14.7+dz,charcoal,garden);}
+  beam([-17,.08,14.7],[-17,2.9,14.7],charcoal,.045,garden);mesh(new THREE.ConeGeometry(2,.45,12),fabric,-17,2.9,14.7,garden);
+  for(let i=0;i<8;i++){const stone=box(.72,.055,.5,-12.7-i*.48,.025,19.3-i*.42,paving,garden);stone.rotation.y=-.15+i*.07;}
+  for(const [x,z] of [[-3.6,17.6],[-3.6,24.5],[-9.6,17.6],[-9.6,24.5],[7.7,16.1],[12.9,16.1],[-15,12.5],[-15,17.1],[18,11]]){
+    box(.12,.62,.12,x,.31,z,charcoal,garden);box(.2,.2,.2,x,.68,z,warm,garden);box(.27,.045,.27,x,.8,z,charcoal,garden);
+    const lamp=new THREE.PointLight('#ffd098',1.3,4.8,2);lamp.position.set(x,.72,z);garden.add(lamp);lights.push(lamp);
+  }
+  for(const [x,z] of [[-18.8,12.7],[-15.5,16.3],[-3.8,23.8],[8.9,17.4],[11.7,18.6]])planting.plants.push([x,.1,z,.85]);
+  for(let i=0;i<48;i++){const z=-14+i*.9;planting.shrubs.push([-22,z,.74],[22,z,.74]);}
+  for(let i=0;i<47;i++){const x=-21+i*.9;planting.shrubs.push([x,-15,.8]);if(x< -2||x>5.8)planting.shrubs.push([x,28.5,.7]);}
   for(const y of [U+.25,2*U+.25,3*U+.25])planting.plants.push([-2,y,-4.3,.85]);
   return {world,architecture,glass,warm,lights,stairs,materials,planting,parts,roads,palette,moduleSize:U};
 }

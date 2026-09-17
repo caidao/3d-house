@@ -19,7 +19,7 @@ try {
   const renderer=new THREE.WebGLRenderer({antialias:true});
   renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
-  renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.88;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;
   host.appendChild(renderer.domElement);
   const manager=new THREE.LoadingManager();
   let missingAsset=false;
@@ -30,7 +30,7 @@ try {
     for(const [suffix,key] of [['color','map'],['normal','normalMap'],['rough','roughnessMap']]){
       const tex=loader.load(`./assets/materials/${name}-${suffix}.jpg`);tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.anisotropy=renderer.capabilities.getMaxAnisotropy();if(key==='map')tex.colorSpace=THREE.SRGBColorSpace;textures[name][key]=tex;
     }
-    textures[name].normalScale=new THREE.Vector2(name==='stone'?.45:.25,name==='stone'?.45:.25);
+    textures[name].normalScale=new THREE.Vector2(.25,.25);if(name==='grass'){textures[name].roughnessMap=null;textures[name].normalScale.set(.08,.08);}
   }
   const scene=new THREE.Scene();scene.background=new THREE.Color('#b5cee1');scene.fog=new THREE.FogExp2('#b5cee1',.003);
   const camera=new THREE.PerspectiveCamera(40,1,.1,350);
@@ -53,7 +53,7 @@ try {
   function addScannedPlanting(name,placements){
     if(!placements.length)return;
     modelLoader.load(`./assets/models/${name}/model.gltf`,asset=>{
-      const root=asset.scene;root.updateMatrixWorld(true);
+      const root=asset.scene;root.updateWorldMatrix(true,true);
       const bounds=new THREE.Box3().setFromObject(root),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());
       const normalize=new THREE.Matrix4().makeTranslation(-center.x,-bounds.min.y,-center.z);
       const dummy=new THREE.Object3D();
@@ -72,16 +72,31 @@ try {
     });
   }
   addScannedPlanting('tree',planting.trees.map(([x,z,h])=>[x,.04,z,h]));
-  addScannedPlanting('shrub',planting.shrubs.map(([x,z,h])=>[x,.16,z,h]));
+  // Compose compact hedges from the existing photographed leaf atlas, rather than repeating a sparse branch scan.
+  const leafMap=loader.load('./assets/models/tree/textures/island_tree_02_leaves_diff_1k.jpg');leafMap.colorSpace=THREE.SRGBColorSpace;
+  const leafAlpha=loader.load('./assets/models/tree/alpha.png');
+  for(const texture of [leafMap,leafAlpha]){texture.repeat.set(.19,.47);texture.offset.set(0,.53);}
+  const leafMaterial=new THREE.MeshStandardMaterial({map:leafMap,alphaMap:leafAlpha,alphaTest:.45,side:THREE.DoubleSide,roughness:1,color:'#bcd59e'});
+  const leavesPerShrub=260,hedges=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),leafMaterial,planting.shrubs.length*leavesPerShrub);
+  const leafPose=new THREE.Object3D();let leafSeed=7513,leafIndex=0;
+  function randomLeaf(){leafSeed=(leafSeed*1664525+1013904223)>>>0;return leafSeed/4294967296;}
+  for(const [x,z,height] of planting.shrubs)for(let i=0;i<leavesPerShrub;i++){
+    const theta=randomLeaf()*Math.PI*2,vertical=randomLeaf()*2-1,radius=height*(.3+randomLeaf()*.16),horizontal=Math.sqrt(1-vertical*vertical);
+    leafPose.position.set(x+Math.cos(theta)*horizontal*radius,.15+height*.5+vertical*radius,z+Math.sin(theta)*horizontal*radius);
+    leafPose.rotation.set(randomLeaf()*Math.PI,theta,randomLeaf()*Math.PI);leafPose.scale.set(height*.12,height*.3,1);leafPose.updateMatrix();hedges.setMatrixAt(leafIndex,leafPose.matrix);
+    hedges.setColorAt(leafIndex,new THREE.Color().setHSL(.21+randomLeaf()*.035,.25,.53+randomLeaf()*.13));leafIndex++;
+  }
+  hedges.castShadow=true;hedges.receiveShadow=true;hedges.computeBoundingSphere();hedges.name='garden-hedges';scene.add(hedges);
   addScannedPlanting('plant',planting.plants);
   const hemi=new THREE.HemisphereLight('#e8f1ff','#9a855a',.7);scene.add(hemi);
   const sun=new THREE.DirectionalLight('#ffe4b0',3.1);sun.position.set(-18,23,26);sun.target.position.set(0,2,0);scene.add(sun.target);sun.castShadow=true;
   sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-27,right:27,top:24,bottom:-24,near:1,far:95});sun.shadow.bias=-.00012;sun.shadow.normalBias=.04;scene.add(sun);
   const fill=new THREE.DirectionalLight('#c3d9ff',.3);fill.position.set(20,10,-20);scene.add(fill);
   let hdr=null,night=false;
-  new HDRLoader(manager).load('./assets/materials/daylight.hdr',texture=>{
+  new HDRLoader(manager).load('./assets/materials/park-surroundings.hdr',texture=>{
     hdr=texture;texture.mapping=THREE.EquirectangularReflectionMapping;scene.environment=texture;
-    if(!night)scene.background=new THREE.Color('#b5cee1');
+    scene.background=texture;
+    scene.backgroundIntensity=night?.13:2;scene.backgroundBlurriness=.02;
     scene.backgroundRotation.y=.8;scene.environmentRotation.y=.8;
   });
   scene.environmentIntensity=.65;
@@ -89,13 +104,13 @@ try {
   const composer=new EffectComposer(renderer,target);composer.addPass(new RenderPass(scene,camera));
   const ao=new SSAOPass(scene,camera,1,1,16);ao.kernelRadius=.55;ao.minDistance=.001;ao.maxDistance=.09;composer.addPass(ao);composer.addPass(new OutputPass());
   let transition=null,activeView='overall',mobile=innerWidth<=760;
-  const views={overall:{pos:[22,26,46],target:[1,7,5]},front:{pos:[1,20,49],target:[1,7,3]},aerial:{pos:[18,49,35],target:[1,2,5]},courtyard:{pos:[2.2,2.4,11.5],target:[-1.5,3.2,-2]},living:{pos:[-8.5,1.8,15],target:[-8.5,1.5,11.5]}};
+  const views={overall:{pos:[24,17.5,45],target:[1,7.2,5]},front:{pos:[1,20,49],target:[1,7,3]},aerial:{pos:[18,49,35],target:[1,2,5]},courtyard:{pos:[2.2,2.4,11.5],target:[-1.5,3.2,-2]},garden:{pos:[-24.5,8,28.5],target:[-14.5,1.5,17]},living:{pos:[-8.5,1.8,15],target:[-8.5,1.5,11.5]}};
   function setView(view,animate=true){
     activeView=view;const target=new THREE.Vector3(...views[view].target),pos=new THREE.Vector3(...views[view].pos);
-    if(mobile&&!['courtyard','living'].includes(view))pos.sub(target).multiplyScalar(1.2).add(target);
+    if(mobile&&!['courtyard','garden','living'].includes(view))pos.sub(target).multiplyScalar(1.2).add(target);
     if(animate&&!matchMedia('(prefers-reduced-motion: reduce)').matches)transition={pos,target};else{camera.position.copy(pos);controls.target.copy(target);controls.update();}
     document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===view));
-    document.querySelector('#view-label').textContent=({overall:'全景',front:'正面',aerial:'俯瞰',courtyard:'庭院',living:'塔楼客厅'})[view];
+    document.querySelector('#view-label').textContent=({overall:'全景',front:'正面',aerial:'俯瞰',courtyard:'庭院',garden:'花园',living:'塔楼客厅'})[view];
   }
   function resize(){const w=host.clientWidth,h=host.clientHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const next=w<=760;if(mobile!==next){mobile=next;setView(activeView,false);}}
   resize();setView('overall',false);new ResizeObserver(resize).observe(host);
@@ -106,8 +121,8 @@ try {
   toggle.onclick=()=>{
     night=!night;document.body.classList.toggle('night',night);toggle.setAttribute('aria-pressed',night);toggle.setAttribute('aria-label',night?'切换日光':'切换夜景');
     document.querySelector('#night-text').textContent=night?'看日光':'看夜景';document.querySelector('#night-icon').textContent=night?'☀':'☾';document.querySelector('#light-label').textContent=night?'暮色灯光':'午后日光';
-    scene.background=night?new THREE.Color('#111e35'):new THREE.Color('#b5cee1');scene.fog.color.set(night?'#18293d':'#b5cee1');
-    hemi.intensity=night?.6:.75;sun.intensity=night?.45:3.4;fill.intensity=night?.32:.3;sun.color.set(night?'#8fb7e5':'#fff0d6');renderer.toneMappingExposure=night?1.05:.88;scene.environmentIntensity=night?.25:.65;
+    scene.background=hdr||new THREE.Color('#b5cee1');scene.backgroundIntensity=night?.13:2;scene.fog.color.set(night?'#18293d':'#b5cee1');
+    hemi.intensity=night?.6:.75;sun.intensity=night?.45:3.4;fill.intensity=night?.32:.3;sun.color.set(night?'#8fb7e5':'#fff0d6');renderer.toneMappingExposure=night?1.05:1;scene.environmentIntensity=night?.25:.65;
     warm.emissiveIntensity=night?3.8:1.3;glass.forEach(m=>{m.emissive.copy(m.color);m.emissiveIntensity=night?.12:.02;});lights.forEach(l=>{l.intensity=night?(l.distance>5?90:16):(l.distance>5?55:.8);});
   };
   function zoom(scale){transition=null;const offset=camera.position.clone().sub(controls.target);offset.setLength(THREE.MathUtils.clamp(offset.length()*scale,controls.minDistance,controls.maxDistance));camera.position.copy(controls.target).add(offset);controls.update();}

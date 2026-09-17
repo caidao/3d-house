@@ -14,3 +14,6 @@ Downloaded at 1K resolution for this real-time scene. Color, normal and roughnes
 - Potted plant: https://polyhaven.com/a/potted_plant_01
 
 Vegetation GLTF geometry, texture maps and alpha masks are stored locally under `../models/`.
+
+Current visible 4K photographic panorama: https://polyhaven.com/a/green_point_park (Greg Zaal, CC0).
+Garden hedges reuse the photographed leaf and alpha atlas from island_tree_02, arranged as instanced leaf clusters.

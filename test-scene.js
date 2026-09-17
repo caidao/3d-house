@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { buildWorld } from './dist/scene.js';
 import { Box3 } from './dist/vendor/three.module.js';
-const {world,architecture,glass,warm,lights,stairs,parts,roads,palette,moduleSize}=buildWorld();
+const {world,architecture,glass,warm,lights,stairs,parts,roads,palette,moduleSize,planting}=buildWorld();
 let meshes=0,rooms=0;
 world.updateMatrixWorld(true);
 world.traverse(node=>{
@@ -53,3 +53,24 @@ assert(exteriorColors.has('magenta')&&exteriorColors.has('cyan'),'Keep the separ
 const left=new Box3().setFromObject(parts['radial-star-tower']),right=new Box3().setFromObject(parts['stepped-annex-2']);
 assert(left.max.x<right.min.x,'Preserve separation between the star tower and annex');
 console.log('PASS: original exterior feature inventory, six road routes and pink/blue stair colours');
+const stairConnection=parts['pink-blue-magnetic-stairs'].userData.connection;
+assert(Math.abs(stairConnection.topY-stairConnection.annexFloorY)<1e-6,'Exterior stair top must meet the annex floor');
+assert.equal(stairConnection.steps,3,'Retain the reference stair module outline');
+for(const name of ['stair-half-magenta','stair-half-cyan'])assert(parts[name],'Both joined magnetic stair halves must exist');
+assert(parts['reference-garden'],'The requested landscaped courtyard must be present');
+assert(existsSync('dist/assets/materials/park-surroundings.hdr'),'The photographic surroundings must be bundled locally');
+console.log('PASS: joined stair landing, original colour halves and photographic environment asset');
+
+for(const [x,z,height] of planting.shrubs){
+  assert([x,z,height].every(Number.isFinite)&&height>0);
+  for(const road of roads){
+    let nearest=Infinity;
+    for(let i=1;i<road.samples.length;i++){
+      const a=road.samples[i-1],b=road.samples[i],dx=b[0]-a[0],dz=b[1]-a[1],length=dx*dx+dz*dz;
+      const t=length?Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[1])*dz)/length)):0;
+      nearest=Math.min(nearest,Math.hypot(x-a[0]-t*dx,z-a[1]-t*dz));
+    }
+    assert(nearest>road.width/2+height*.5,'Garden planting must remain outside the original roads');
+  }
+}
+console.log('PASS: all garden planting stays clear of the original roads');
