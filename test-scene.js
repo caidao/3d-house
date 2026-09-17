@@ -7,7 +7,7 @@ const {world,architecture,glass,warm,lights,stairs}=buildWorld();
 let meshes=0,rooms=0;
 world.updateMatrixWorld(true);
 world.traverse(node=>{
-  if(node.name==='habitable-building')rooms++;
+  if(node.name==='habitable-building'||node.name==='gallery-room')rooms++;
   if(!node.isMesh)return;
   meshes++;
   const positions=node.geometry.getAttribute('position');
@@ -33,13 +33,13 @@ function checkImports(file){
   file=resolve(file);if(seen.has(file))return;seen.add(file);
   assert(existsSync(file),`Missing runtime module: ${file}`);
   const source=readFileSync(file,'utf8').replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,'');
-  for(const [,name] of source.matchAll(/from\s*['"]([^'"]+)['"]/g)){
+  for(const [,name] of source.matchAll(/^\s*(?:import|export)\s+[\w{},*\s]+?\sfrom\s*['"]([^'"]+)['"]/gm)){
     if(name==='three')checkImports('dist/vendor/three.module.js');
     else if(name.startsWith('.'))checkImports(resolve(dirname(file),name));
     else assert.fail(`Unexpected remote/package dependency: ${name}`);
   }
 }
 checkImports('dist/app.js');
-for(const name of ['stone','wood','grass'])for(const suffix of ['color','normal','rough'])assert(existsSync(`dist/assets/materials/${name}-${suffix}.jpg`));
+for(const name of ['stone','wood','grass','paving'])for(const suffix of ['color','normal','rough'])assert(existsSync(`dist/assets/materials/${name}-${suffix}.jpg`));
 assert(existsSync('dist/assets/materials/daylight.hdr'));
 console.log(`PASS: ${meshes} model surfaces, ${rooms} room blocks, ${stairs.length} continuous stairs, ${lights.length} real lights, ${seen.size} local modules; valid materials and geometry.`);
